@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Virtuta DNS and activate HTTPS every 5 minutes
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=5min
+RandomizedDelaySec=15s
+
+[Install]
+WantedBy=timers.target

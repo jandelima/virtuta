@@ -1,0 +1,13 @@
+[Unit]
+Description=Consistent local backup of Virtuta SQLite
+After=virtuta.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/virtuta-backup
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/virtuta

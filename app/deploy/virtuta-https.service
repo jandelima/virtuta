@@ -1,0 +1,9 @@
+[Unit]
+Description=Activate Virtuta HTTPS when public DNS is ready
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/virtuta-activate-https
+TimeoutStartSec=300
