@@ -1,6 +1,6 @@
 import type { OfficeApp } from '../app';
 import { REUNIAO, REUNIAO_DOOR, inside } from '../../../shared/layout';
-import type { FocusBlock } from '../../../shared/protocol';
+import type { FocusBlock, Suggestion, SuggestionKind } from '../../../shared/protocol';
 import { STATUS_COLOR } from '../people';
 import { icon } from './icons';
 import { ago, esc } from './dom';
@@ -8,11 +8,18 @@ import { api } from '../api';
 
 // Gaveta lateral com o painel de cada objeto ou função do escritório.
 
-type Kind = 'porta' | 'recepcao' | 'radio' | 'lounge' | 'jogo' | 'foco' | 'pessoa' | 'mesa' | 'bilhetes' | 'outro';
+type Kind = 'porta' | 'recepcao' | 'radio' | 'lounge' | 'jogo' | 'foco' | 'sugestoes' | 'pessoa' | 'mesa' | 'bilhetes' | 'outro';
 
 const head = (ic: string, title: string, sub: string) =>
   `<div class="dh"><span class="dic">${icon(ic)}</span><div><b>${esc(title)}</b><small>${esc(sub)}</small></div><button class="iconbtn" data-close aria-label="Fechar">${icon('x')}</button></div>`;
 
+export const SG_KIND: Record<SuggestionKind, string> = { ideia: 'Ideia', melhoria: 'Melhoria', bug: 'Problema' };
+const SG_HINT: Record<SuggestionKind, string> = {
+  ideia: 'Uma ideia nova para o escritório…',
+  melhoria: 'O que poderia funcionar melhor, e como?',
+  bug: 'O que aconteceu, onde você estava e o que esperava que acontecesse?',
+};
+export const sgStatus = (x: Suggestion) => x.status === 'feita' ? '<span class="chip on">Feita</span>' : x.status === 'descartada' ? '<span class="chip">Descartada</span>' : '<span class="chip open">Aberta</span>';
 
 export class Panels {
   private d = document.getElementById('drawer')!;
@@ -58,7 +65,7 @@ export class Panels {
   open(kind: string) {
     const fn: Record<string, () => void> = {
       porta: () => this.door(), recepcao: () => this.reception(), radio: () => this.radio(), lounge: () => this.lounge(),
-      jogo: () => this.game(), foco: () => this.focus(),
+      jogo: () => this.game(), foco: () => this.focus(), sugestoes: () => void this.suggestions(),
     };
     fn[kind]?.();
   }
@@ -270,7 +277,7 @@ export class Panels {
           <div class="blocks">${f.blocks.map((x, i) => `<span class="blk ${x.kind}${i === b?.index ? ' now' : ''}${b && i < b.index ? ' done' : ''}">${x.kind === 'foco' ? 'Foco' : 'Pausa'} · ${x.minutes} min</span>`).join('')}</div>
           <h4>Participando (${f.participants.length})</h4>
           <div class="faces big">${f.participants.map((id) => `<span title="${esc(app.name(id))}">${app.shell.avatarImg(id, 34)}</span>`).join('')}</div>
-          <p class="muted">Durante os blocos de foco, quem participa fica protegido de conversas automáticas. O jardim cresce com o tempo de foco da equipe (${Math.round(f.grown)} min até agora).</p>
+          <p class="muted">Durante os blocos de foco, quem participa fica protegido de conversas automáticas.</p>
         </div>
         <div class="df"><button class="btn primary" id="fJoin">${joined ? 'Sair da sessão' : 'Participar'}</button></div>`, (d) => d.querySelector('#fJoin')!.addEventListener('click', () => app.send({ t: joined ? 'focusLeave' : 'focusJoin' })), 'foco');
     }
@@ -293,6 +300,40 @@ export class Panels {
         this.close();
       });
     }, 'foco');
+  }
+
+  // ---------- caixa de sugestões ----------
+  private sgKind: SuggestionKind = 'ideia';
+  private async suggestions() {
+    const app = this.app;
+    let mine: Suggestion[] = [];
+    try { mine = (await api.mySuggestions()).suggestions; } catch { /* a lista é só um complemento */ }
+    const kind = this.sgKind;
+    this.show(`${head('bulb', 'Caixa de sugestões', 'Ideias, melhorias e problemas do Virtuta')}
+      <div class="db2">
+        <p class="muted">Escreva um bilhete e coloque na caixa. A administração lê tudo, e você acompanha aqui o que já foi resolvido.</p>
+        <div class="seg">${(Object.keys(SG_KIND) as SuggestionKind[]).map((k) => `<button data-k="${k}" class="${k === kind ? 'on' : ''}">${SG_KIND[k]}</button>`).join('')}</div>
+        <textarea id="sgText" maxlength="2000" placeholder="${SG_HINT[kind]}"></textarea>
+        <button class="btn primary" id="sgSend">${icon('send')}Colocar na caixa</button>
+        <h4>Seus bilhetes</h4>
+        <div class="list">${mine.length ? mine.map((x) => `<div class="li sg"><span class="lic">${icon(x.kind === 'bug' ? 'bug' : 'bulb')}</span><div><b>${esc(x.text)}</b><small>${SG_KIND[x.kind]} · ${ago(x.createdAt)}</small></div>${sgStatus(x)}</div>`).join('') : '<p class="empty">Você ainda não deixou nenhum bilhete.</p>'}</div>
+      </div>`, (d) => {
+      const text = d.querySelector<HTMLTextAreaElement>('#sgText')!;
+      d.querySelectorAll<HTMLElement>('[data-k]').forEach((b) => b.addEventListener('click', () => {
+        this.sgKind = b.dataset.k as SuggestionKind;
+        d.querySelectorAll('[data-k]').forEach((x) => x.classList.toggle('on', x === b));
+        text.placeholder = SG_HINT[this.sgKind];
+        text.focus();
+      }));
+      d.querySelector('#sgSend')!.addEventListener('click', async () => {
+        if (text.value.trim().length < 3) return text.focus();
+        try {
+          await api.suggest(this.sgKind, text.value.trim());
+          app.notify.toast(this.sgKind === 'bug' ? 'Problema registrado. Obrigado por avisar!' : 'Sugestão na caixa. Obrigado!');
+          void this.suggestions();
+        } catch (e) { app.notify.toast((e as Error).message); }
+      });
+    }, 'sugestoes');
   }
 
   // ---------- dispositivos e administração (carregados sob demanda) ----------

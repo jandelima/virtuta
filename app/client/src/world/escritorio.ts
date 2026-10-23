@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { AREAS, BOARD_GAP, D, DESKS, REUNIAO, REUNIAO_DOOR, SALA, W, type Desk } from '../../../shared/layout';
 import { FACE, FS, MAT, Space, type Facing } from './space';
-import { carpet, concrete, planks, tiles } from './textures';
+import { carpet, concrete, drawn, planks, tiles } from './textures';
 import { beanbag, easel, nameplate, officeChair, panel, signTex, stickyNote, tree } from './props';
 import { SEAT_Y, chairAt, floorMat, plant } from './office';
 import { boardTex, gameTex, tvTex } from './live';
@@ -25,7 +25,6 @@ export interface World {
   boards: Map<string, THREE.MeshStandardMaterial>;
   tv: THREE.MeshStandardMaterial;
   game: THREE.MeshStandardMaterial;
-  garden: THREE.Group;
   door: THREE.Object3D;
 }
 
@@ -66,31 +65,64 @@ function meetingTable(sp: Space, id: string, cx: number, cz: number, len: number
   chair(`${id}-cab`, cx, cz + len / 2 + 0.46, 'n');
 }
 
-/** Plantas do jardim do foco coletivo: crescem conforme a equipe acumula tempo de foco. */
-function garden(sp: Space, x: number, z: number) {
-  const box = sp.box(x, 0, z, 1.3, 0.34, 0.5, new THREE.MeshStandardMaterial({ color: '#a8835c', roughness: 0.8 }));
-  const soil = sp.box(x, 0.34, z, 1.24, 0.02, 0.44, new THREE.MeshStandardMaterial({ color: '#5b4330', roughness: 1 }));
-  sp.nav.block(x - 0.8, z - 0.4, x + 0.8, z + 0.4);
-  const g = new THREE.Group();
-  g.userData.dynamic = true;
-  const trunk = new THREE.MeshStandardMaterial({ color: '#7a5636', roughness: 0.9 });
-  const leaf = [new THREE.MeshStandardMaterial({ color: '#5f9d4a', roughness: 0.85, flatShading: true }), new THREE.MeshStandardMaterial({ color: '#77b35c', roughness: 0.85, flatShading: true })];
-  [-0.42, 0, 0.42].forEach((dx, i) => {
-    const t = new THREE.Group();
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 0.5, 6), trunk);
-    stem.position.y = 0.25;
-    const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), leaf[i % 2]);
-    crown.position.y = 0.55;
-    stem.castShadow = crown.castShadow = true;
-    t.add(stem, crown);
-    t.position.set(dx, 0, 0);
-    t.userData.grow = i;
-    g.add(t);
+/** Púlpito com a caixa de sugestões, encostado na parede, e um quadrinho acima que diz o que é. */
+function suggestionBox(sp: Space, x: number, z: number) {
+  const wood = new THREE.MeshStandardMaterial({ color: '#8a6440', roughness: 0.75 });
+  const top = new THREE.MeshStandardMaterial({ color: '#b98c5c', roughness: 0.7 });
+  const parts = [
+    sp.box(x, 0, z, 0.46, 0.04, 0.36, wood),
+    sp.box(x, 0.04, z, 0.13, 0.76, 0.13, wood),
+    sp.box(x, 0.8, z, 0.52, 0.035, 0.4, top),
+    // a urna: corpo claro, tampa escura com a fenda e um bilhete entrando
+    sp.box(x, 0.835, z, 0.4, 0.26, 0.3, new THREE.MeshStandardMaterial({ color: '#f3eee5', roughness: 0.6 })),
+    sp.box(x, 1.095, z, 0.42, 0.03, 0.32, MAT.cap),
+    sp.box(x, 1.12, z, 0.2, 0.006, 0.035, new THREE.MeshStandardMaterial({ color: '#0f1114', roughness: 1 }), false),
+  ];
+  const slip = new THREE.Mesh(new THREE.PlaneGeometry(0.13, 0.08), new THREE.MeshStandardMaterial({ color: '#ffe27a', roughness: 0.85, side: THREE.DoubleSide }));
+  slip.position.set(x + 0.02, 1.15, z);
+  slip.rotation.set(0, 0, 0.06);
+  slip.castShadow = true;
+  sp.group.add(slip);
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.2), new THREE.MeshStandardMaterial({ map: suggestionLabelTex(), roughness: 0.7 }));
+  label.position.set(x, 0.965, z + 0.152);
+  sp.group.add(label);
+  sp.nav.block(x - 0.38, z - 0.3, x + 0.38, z + 0.3);
+  const sign = panel(sp, x, 1.68, 0.11, 1.2, 0.42, 0, suggestionSignTex(), { frame: '#20242c', depth: 0.03 });
+  const it = sp.interactive('sugestoes', 'Caixa de sugestões', 'Deixar uma ideia, melhoria ou problema', [...parts, slip, label, sign.obj]);
+  // usa-se de frente, nunca pelos lados
+  it.spot = { x, z: z + 0.75 };
+}
+
+function suggestionLabelTex() {
+  return drawn(360, 200, (c) => {
+    c.fillStyle = '#f3eee5'; c.fillRect(0, 0, 360, 200);
+    c.fillStyle = '#f2b443'; c.beginPath(); c.roundRect(130, 18, 100, 100, 24); c.fill();
+    bulb(c, 180, 66, 1.15);
+    c.fillStyle = '#20242c'; c.font = '700 40px Geist, sans-serif'; c.textAlign = 'center'; c.fillText('Sugestões', 180, 170);
   });
-  g.position.set(x, 0.35, z);
-  sp.group.add(g);
-  sp.interactive('foco', 'Jardim do foco', 'Sessão de foco coletivo', [box, soil, g]);
-  return g;
+}
+
+function suggestionSignTex() {
+  return drawn(1200, 420, (c) => {
+    c.fillStyle = '#20242c'; c.fillRect(0, 0, 1200, 420);
+    c.fillStyle = '#f2b443'; c.beginPath(); c.roundRect(60, 90, 240, 240, 52); c.fill();
+    bulb(c, 180, 208, 2.7);
+    c.fillStyle = '#ffffff'; c.font = '700 112px Geist, sans-serif'; c.fillText('Caixa de', 350, 196);
+    c.fillText('sugestões', 350, 316);
+  });
+}
+
+/** Lâmpada desenhada no centro (cx, cy), no traço do ícone da interface. */
+function bulb(c: CanvasRenderingContext2D, cx: number, cy: number, k: number) {
+  c.save();
+  c.translate(cx, cy);
+  c.scale(k, k);
+  c.strokeStyle = '#20242c'; c.lineWidth = 6; c.lineCap = 'round'; c.lineJoin = 'round';
+  c.beginPath();
+  c.moveTo(-9, 14); c.bezierCurveTo(-9, 6, -20, 2, -20, -10); c.arc(0, -10, 20, Math.PI, 0); c.bezierCurveTo(20, 2, 9, 6, 9, 14);
+  c.closePath(); c.stroke();
+  c.beginPath(); c.moveTo(-8, 22); c.lineTo(8, 22); c.moveTo(-5, 30); c.lineTo(5, 30); c.stroke();
+  c.restore();
 }
 
 export function buildEscritorio(): World {
@@ -212,8 +244,8 @@ export function buildEscritorio(): World {
   plant(sp, 9.0, 7.2);
   plant(sp, 15.1, 7.2);
   sp.lamp(LX, 1.6, LZ, '#ffc27a', 5, 7);
-  // jardim do foco coletivo, encostado na parede do fundo, atrás do sofá
-  const gardenGroup = garden(sp, LX, 0.55);
+  // caixa de sugestões, encostada na parede do fundo, atrás do sofá
+  suggestionBox(sp, LX, 0.5);
 
   // ======== Salão: Recepção ========
   panel(sp, 0.25, 0.0, 9.1, 1.3, 1.25, Math.PI / 2, signTex('Virtuta', 'Bem-vindo'), { frame: '#20242c', depth: 0.12 });
@@ -276,5 +308,5 @@ export function buildEscritorio(): World {
 
   sp.spawn.set(2.6, 0, 10.6);
   sp.finalize();
-  return { space: sp, desks, boards: boardsMap, tv, game: gameFace, garden: gardenGroup, door };
+  return { space: sp, desks, boards: boardsMap, tv, game: gameFace, door };
 }

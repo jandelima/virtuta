@@ -351,6 +351,19 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--acc); outli
 .drawer .hint-box { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--acc-soft); color: var(--text); margin: 0; }
 .drawer .hint-box .ic { color: var(--acc); width: 16px; height: 16px; margin-top: 1px; }
 .drawer textarea { min-height: 64px; }
+.seg { display: inline-flex; align-self: flex-start; padding: 3px; gap: 2px; border-radius: 11px; background: var(--chip); }
+.seg button { height: 30px; padding: 0 14px; border-radius: 9px; font-weight: 600; color: var(--mut); }
+.seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14); }
+.drawer .li.sg { align-items: flex-start; }
+.drawer .li.sg b { font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.chip.open { background: var(--acc-soft); color: var(--acc); }
+.chip.bug { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
+.sg-text { margin: 0 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+.sg-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sg-bar .btn { margin-left: auto; }
+.tbl td.acts { white-space: nowrap; text-align: right; }
+.tbl td.acts .btn { vertical-align: middle; }
+.tbl td.acts .btn + .btn { margin-left: 6px; }
 .drawer .li a { color: var(--acc); font-weight: 600; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .drawer .li a:hover { text-decoration: underline; }
 .iconbtn.sm { width: 28px; height: 28px; opacity: 0; }

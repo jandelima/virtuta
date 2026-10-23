@@ -112,9 +112,7 @@ O comportamento de microfone e câmera ao retornar de AFK, encerrar foco e recon
 - Cada participante pode deixar a sessão explicitamente.
 - Trabalhar em outra aba ou aplicativo é compatível com a sessão e não representa abandono.
 
-Direção de experiência: explorar uma representação visual que cresce com a concentração, como uma árvore ou jardim coletivo.
-
-Ainda serão definidos os ciclos de foco e pausa, a entrada após o início, interrupções, saída do organizador, progressão visual e persistência dos resultados.
+Ainda serão definidos os ciclos de foco e pausa, a entrada após o início, interrupções, saída do organizador, e persistência dos resultados.
 
 ## 8. Quadros brancos e recuperação do trabalho
 
@@ -130,8 +128,17 @@ Formato de exportação, permissões, histórico de alterações e organização
 
 ## 9. Objetos úteis
 
-- Objetos do escritório abrem as ferramentas usadas pela equipe (quadros, rádio, recepção, jogo, jardim do foco).
+- Objetos do escritório abrem as ferramentas usadas pela equipe (quadros, rádio, recepção, jogo, caixa de sugestões).
 - As mesas de projeto foram retiradas em 23/10: não se mostraram úteis para a equipe.
+- O jardim do foco coletivo saiu em 23/10 para dar lugar à caixa de sugestões. O foco coletivo continua, pelo botão do topo.
+
+### Caixa de sugestões
+
+- Um púlpito no lounge, encostado na parede atrás do sofá, com a caixa e uma placa acima.
+- Integrantes deixam um bilhete do tipo ideia, melhoria ou problema. Visitantes não usam a caixa.
+- Quem escreveu acompanha os próprios bilhetes e vê quando foram marcados como feitos ou descartados.
+- A administração recebe um aviso quando chega um bilhete novo e acompanha tudo na aba Sugestões: marca como feita, descarta, reabre e copia as abertas em texto para tratar depois.
+- Cada bilhete guarda autor, data e o navegador usado, para ajudar a reproduzir problemas.
 
 ## 10. Bilhetes pessoais nas mesas
 

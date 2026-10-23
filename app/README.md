@@ -3,14 +3,14 @@
 Escritório virtual da equipe: sala da equipe com mesas de cada integrante, salão aberto com
 recepção, café, lounge e lazer, e uma sala de reunião.
 Conversa por proximidade com voz, câmera e tela, quadros colaborativos, bilhetes nas mesas,
-rádio compartilhada, foco coletivo, visitantes e administração.
+rádio compartilhada, foco coletivo, caixa de sugestões, visitantes e administração.
 
 ## Como é montado
 
 | Parte | O que faz |
 | --- | --- |
 | `client/` | Página do escritório (TypeScript, three.js, LiveKit). Leve: cenário com poucas chamadas de desenho, sombra estática, quadros reduzidos quando nada se mexe e mídia carregada só quando alguém conversa. |
-| `server/` | Um processo Node: login Google do domínio, sessões, presença em tempo real (WebSocket), regras de conversa, bilhetes, quadros, rádio, foco coletivo, visitantes e administração. Dados em SQLite (`/data/virtuta.db`). |
+| `server/` | Um processo Node: login Google do domínio, sessões, presença em tempo real (WebSocket), regras de conversa, bilhetes, quadros, rádio, foco coletivo, caixa de sugestões, visitantes e administração. Dados em SQLite (`/data/virtuta.db`). |
 | `shared/` | Planta do escritório e protocolo, usados pelos dois lados. |
 | LiveKit | Servidor de mídia próprio (voz, câmera e tela). Cada pessoa só recebe a mídia de quem está na mesma conversa. |
 | Caddy | HTTPS automático na VPS. |

@@ -3,10 +3,11 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { WebSocketServer } from 'ws';
 import { config, googleEnabled, secureCookies } from './config';
-import { guests, invites, sessions, settings, users } from './db';
+import { guests, invites, sessions, settings, suggestions, users } from './db';
 import { SESSION_COOKIE, googleAuthUrl, googleExchange, loginGuest, loginUser, mediaToken, parseCookies, publicUser, randomId, whoIs } from './auth';
 import { Office } from './office';
 import { DESKS } from '../../shared/layout';
+import type { SuggestionStatus } from '../../shared/protocol';
 
 const office = new Office();
 
@@ -118,6 +119,26 @@ const routes: Record<string, Handler> = {
     json(res, 200, { ok: true });
   },
 
+  // caixa de sugestões: integrantes deixam ideias, melhorias e problemas; a administração acompanha
+  'POST /api/suggestions': async (req, res) => {
+    const who = whoIs(req);
+    if (!who || who.guest) return json(res, 401, {});
+    const b = await body<{ kind?: string; text?: string }>(req);
+    const kind = (['ideia', 'melhoria', 'bug'] as const).find((k) => k === b.kind);
+    const text = String(b.text ?? '').trim().slice(0, 2000);
+    if (!kind || text.length < 3) return json(res, 400, { error: 'Escreva a sugestão antes de enviar' });
+    const name = users.get(who.id)!.name;
+    // o navegador ajuda a reproduzir problemas
+    suggestions.add({ kind, text, author: who.id, authorName: name, ua: String(req.headers['user-agent'] ?? '').slice(0, 300) });
+    office.toastAdmins(`${name} deixou ${kind === 'bug' ? 'um problema' : 'uma sugestão'} na caixa de sugestões.`, who.id);
+    json(res, 200, { ok: true });
+  },
+  'GET /api/suggestions': (req, res) => {
+    const who = whoIs(req);
+    if (!who || who.guest) return json(res, 401, {});
+    json(res, 200, { suggestions: suggestions.mine(who.id) });
+  },
+
   // administração
   'GET /api/admin': (req, res) => {
     if (!isAdmin(req)) return json(res, 403, {});
@@ -126,6 +147,7 @@ const routes: Record<string, Handler> = {
       invites: invites.all().map((i) => ({ token: i.token, name: i.name, host: users.get(i.created_by)?.name ?? '', createdAt: i.created_at, expiresAt: i.expires_at, revoked: !!i.revoked })),
       settings: { officeName: settings.get('officeName') ?? config.officeName },
       desks: DESKS.map((d) => d.index),
+      suggestions: suggestions.all(),
     });
   },
   'POST /api/admin/member': async (req, res) => {
@@ -153,6 +175,14 @@ const routes: Record<string, Handler> = {
     if (!isAdmin(req)) return json(res, 403, {});
     const b = await body<{ token: string }>(req);
     invites.revoke(b.token);
+    json(res, 200, { ok: true });
+  },
+  'POST /api/admin/suggestion': async (req, res) => {
+    if (!isAdmin(req)) return json(res, 403, {});
+    const b = await body<{ id?: number; status?: string }>(req);
+    const status = (['aberta', 'feita', 'descartada'] as SuggestionStatus[]).find((s) => s === b.status);
+    if (!status || !Number.isInteger(b.id)) return json(res, 400, {});
+    suggestions.setStatus(b.id!, status);
     json(res, 200, { ok: true });
   },
   'POST /api/admin/settings': async (req, res) => {

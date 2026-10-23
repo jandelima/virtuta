@@ -1,5 +1,7 @@
 // Chamadas HTTP ao servidor.
 
+import type { Suggestion, SuggestionKind, SuggestionStatus } from '../../shared/protocol';
+
 export interface MeResponse {
   config: { googleEnabled: boolean; devLogin: boolean; officeName: string; domain: string };
   user?: { id: string; name: string; role: 'member' | 'admin' | 'guest' };
@@ -30,6 +32,9 @@ export const api = {
   adminMember: (b: { id: string; role?: string; desk?: number | null; active?: boolean; name?: string }) => call('POST', '/api/admin/member', b),
   adminRevoke: (token: string) => call('POST', '/api/admin/invite/revoke', { token }),
   adminSettings: (b: { officeName: string }) => call('POST', '/api/admin/settings', b),
+  adminSuggestion: (id: number, status: SuggestionStatus) => call('POST', '/api/admin/suggestion', { id, status }),
+  suggest: (kind: SuggestionKind, text: string) => call<{ ok: boolean }>('POST', '/api/suggestions', { kind, text }),
+  mySuggestions: () => call<{ suggestions: Suggestion[] }>('GET', '/api/suggestions'),
 };
 
 export interface AdminData {
@@ -37,4 +42,5 @@ export interface AdminData {
   invites: { token: string; name: string; host: string; createdAt: number; expiresAt: number; revoked: boolean }[];
   settings: { officeName: string };
   desks: number[];
+  suggestions: Suggestion[];
 }

@@ -180,6 +180,10 @@ export class Office {
       p.ws.send(s);
     }
   }
+  /** Aviso para a administração online (ex.: sugestão nova na caixa). */
+  toastAdmins(text: string, except?: string) {
+    this.broadcast({ t: 'toast', text }, except, (p) => p.user.role === 'admin');
+  }
   private to(id: string, m: ServerMsg) { send(this.people.get(id)?.ws ?? null, m); }
   private members = (p: Person) => p.user.role !== 'guest';
 
@@ -605,7 +609,7 @@ export class Office {
     if (this.focus || p.user.role === 'guest' || !Array.isArray(blocks)) return;
     const ok = blocks.filter((b) => (b.kind === 'foco' || b.kind === 'pausa') && finite(b.minutes, 1, 180)).slice(0, 16);
     if (!ok.length) return;
-    this.focus = { id: randomId(5), owner: p.presence.id, startedAt: Date.now(), blocks: ok, participants: [p.presence.id], grown: 0 };
+    this.focus = { id: randomId(5), owner: p.presence.id, startedAt: Date.now(), blocks: ok, participants: [p.presence.id] };
     this.focusBlock = 0;
     this.leaveConv(p.presence.id, true);
     this.broadcastFocus();
@@ -625,7 +629,6 @@ export class Office {
     if (!this.focus) return;
     const b = this.currentBlock();
     if (!b) { this.focus = null; return this.broadcastFocus(); }
-    if (b.kind === 'foco') this.focus.grown += this.focus.participants.length / 60;
     let i = 0, t = (Date.now() - this.focus.startedAt) / 60000;
     for (const x of this.focus.blocks) { if (t < x.minutes) break; t -= x.minutes; i++; }
     if (i !== this.focusBlock) {

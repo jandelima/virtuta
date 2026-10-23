@@ -72,14 +72,17 @@ export interface FocusSession {
   startedAt: number;
   blocks: FocusBlock[];
   participants: string[];
-  /** Minutos de foco acumulados pela equipe nesta sessão (faz o jardim crescer). */
-  grown: number;
 }
 
 
 export interface GameState { id: string; board: string[]; players: [string | null, string | null]; turn: 0 | 1; winner: string | null; draw: boolean }
 
 export interface Settings { officeName: string }
+
+/** Bilhete da caixa de sugestões: ideia, melhoria ou problema no próprio Virtuta. */
+export type SuggestionKind = 'ideia' | 'melhoria' | 'bug';
+export type SuggestionStatus = 'aberta' | 'feita' | 'descartada';
+export interface Suggestion { id: number; kind: SuggestionKind; text: string; author: string; authorName: string; status: SuggestionStatus; ua: string; createdAt: number; updatedAt: number }
 
 /** Cliente → servidor */
 export type ClientMsg =

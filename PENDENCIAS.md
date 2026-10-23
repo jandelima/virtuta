@@ -27,3 +27,7 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 - [x] **Costas do boneco atravessando o encosto** em cadeiras de madeira (café, recepção): afastar o quadril do encosto, medindo o encosto no modelo.
 - [x] **Conferir todas as funções multiplayer** com várias pessoas.
 - [x] **Link para a rede local**, com HTTPS (sem ele, o navegador bloqueia microfone e câmera fora do localhost) e voz e vídeo funcionando para quem entra de outro computador.
+
+# Rodada 3 — 23/10
+
+- [x] **Caixa de sugestões no lugar do jardim** (atrás do sofá do lounge): púlpito com a caixa, onde as pessoas deixam ideias, melhorias ou problemas do site. Fica registrado no servidor, e a administração vê, trata e copia tudo na aba Sugestões.

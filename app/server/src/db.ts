@@ -1,10 +1,10 @@
 import Database from 'better-sqlite3';
 import { join } from 'node:path';
 import { config } from './config';
-import type { BoardCopy, BoardElement, BoardSummary, Look, Note } from '../../shared/protocol';
+import type { BoardCopy, BoardElement, BoardSummary, Look, Note, Suggestion, SuggestionKind, SuggestionStatus } from '../../shared/protocol';
 import { DESKS } from '../../shared/layout';
 
-// Banco SQLite em arquivo único: integrantes, sessões, convites, bilhetes e quadros.
+// Banco SQLite em arquivo único: integrantes, sessões, convites, bilhetes, quadros e sugestões.
 
 export const db = new Database(join(config.dataDir, 'virtuta.db'));
 db.pragma('journal_mode = WAL');
@@ -64,6 +64,17 @@ CREATE TABLE IF NOT EXISTS board_copies (
   elements TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   created_by TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS suggestions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  author TEXT NOT NULL,
+  author_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'aberta',
+  ua TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS notes_to ON notes(to_user, read_at);
@@ -162,6 +173,18 @@ export const boards = {
   },
   copies: (boardId: string) => (db.prepare('SELECT id, board_id, name, created_at, created_by FROM board_copies WHERE board_id = ? ORDER BY created_at DESC').all(boardId) as { id: number; board_id: string; name: string; created_at: number; created_by: string }[]).map((r): BoardCopy => ({ id: r.id, boardId: r.board_id, name: r.name, createdAt: r.created_at, createdBy: r.created_by })),
   getCopy: (id: number) => db.prepare('SELECT * FROM board_copies WHERE id = ?').get(id) as { id: number; board_id: string; name: string; elements: string } | undefined,
+};
+
+// ---------- caixa de sugestões ----------
+interface SuggestionRow { id: number; kind: SuggestionKind; text: string; author: string; author_name: string; status: SuggestionStatus; ua: string; created_at: number; updated_at: number }
+const suggestionOut = (r: SuggestionRow): Suggestion => ({ id: r.id, kind: r.kind, text: r.text, author: r.author, authorName: r.author_name, status: r.status, ua: r.ua, createdAt: r.created_at, updatedAt: r.updated_at });
+export const suggestions = {
+  add(s: { kind: SuggestionKind; text: string; author: string; authorName: string; ua: string }) {
+    db.prepare('INSERT INTO suggestions (kind, text, author, author_name, ua, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(s.kind, s.text, s.author, s.authorName, s.ua, now(), now());
+  },
+  mine: (author: string) => (db.prepare('SELECT * FROM suggestions WHERE author = ? ORDER BY created_at DESC LIMIT 30').all(author) as SuggestionRow[]).map(suggestionOut),
+  all: () => (db.prepare('SELECT * FROM suggestions ORDER BY created_at DESC LIMIT 500').all() as SuggestionRow[]).map(suggestionOut),
+  setStatus: (id: number, status: SuggestionStatus) => db.prepare('UPDATE suggestions SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), id),
 };
 
 // ---------- configurações ----------

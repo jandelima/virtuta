@@ -474,7 +474,7 @@ export class OfficeApp {
       this.slow = t;
       this.shell.everySecond();
       this.radioPlayer.update();
-      this.growGarden();
+      this.refreshTv();
     }
   }
   private tick = 0;
@@ -628,7 +628,7 @@ export class OfficeApp {
     if (it.id === 'cafe') return this.act(it);
     const me = this.myAvatar!;
     if (boxDist(it.box, me.pos.x, me.pos.z) < 1.0) return this.act(it);
-    const spot = this.approach(it);
+    const spot = it.spot ?? this.approach(it);
     if (!spot) return this.act(it);
     this.walkTo(spot.x, spot.z, () => {
       me.faceTowards((it.box.min.x + it.box.max.x) / 2, (it.box.min.z + it.box.max.z) / 2);
@@ -849,16 +849,6 @@ export class OfficeApp {
     this.world.tv.map = t;
     this.world.tv.emissiveMap = t;
     this.world.tv.needsUpdate = true;
-  }
-
-  private growGarden() {
-    this.refreshTv();
-    const grown = this.focus?.grown ?? 0;
-    // cada planta cresce com 30 minutos-pessoa de foco, até o tamanho adulto
-    this.world.garden.children.forEach((t, i) => {
-      const s = THREE.MathUtils.clamp(0.35 + (grown - i * 15) / 30, 0.35, 1.25);
-      t.scale.setScalar(s);
-    });
   }
 
   areaName(id: string) {

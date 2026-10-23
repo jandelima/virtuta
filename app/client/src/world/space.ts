@@ -41,6 +41,8 @@ export interface Interactive {
   box: THREE.Box3;
   /** Assentos do objeto (cadeira, sofá); vazio nos demais. */
   seats: string[];
+  /** Onde a pessoa fica para usar o objeto, quando só a frente serve (ex.: púlpito). */
+  spot?: { x: number; z: number };
 }
 
 /**
