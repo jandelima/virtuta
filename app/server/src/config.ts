@@ -16,6 +16,7 @@ const bool = (v: string | undefined) => v === '1' || v === 'true';
 
 export const config = {
   port: Number(env.PORT ?? 8787),
+  host: env.HOST ?? '0.0.0.0',
   /** Endereço público do app, usado no retorno do login e nos convites. */
   publicUrl: (env.PUBLIC_URL ?? 'http://localhost:5173').replace(/\/$/, ''),
   dataDir: resolve(env.DATA_DIR ?? './data'),
@@ -43,6 +44,10 @@ export const googleEnabled = !!(config.google.clientId && config.google.clientSe
 
 mkdirSync(config.dataDir, { recursive: true });
 
-if (config.devLogin && secureCookies) {
-  console.warn('[aviso] DEV_LOGIN está ligado com endereço https: desligue em produção.');
+if (env.NODE_ENV === 'production') {
+  if (config.devLogin) throw new Error('DEV_LOGIN é proibido em produção');
+  if (!secureCookies) throw new Error('PUBLIC_URL precisa usar HTTPS em produção');
+  if (config.livekit.apiKey === 'devkey' || config.livekit.apiSecret.length < 32) {
+    throw new Error('Configure chaves fortes do LiveKit em produção');
+  }
 }

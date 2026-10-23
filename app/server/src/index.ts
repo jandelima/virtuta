@@ -35,6 +35,7 @@ const sessionCookie = (token: string, days = 30) => cookie(SESSION_COOKIE, token
 // ---------- rotas ----------
 type Handler = (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<void> | void;
 const routes: Record<string, Handler> = {
+  'GET /api/health': (_req, res) => json(res, 200, { ok: true }),
   'GET /api/me': (req, res) => {
     const who = whoIs(req);
     const cfg = { googleEnabled, devLogin: config.devLogin, officeName: settings.get('officeName') ?? config.officeName, domain: config.allowedDomain };
@@ -186,9 +187,12 @@ function serveStatic(req: IncomingMessage, res: ServerResponse, url: URL) {
 }
 
 const server = createServer(async (req, res) => {
-  const url = new URL(req.url ?? '/', 'http://local');
-  const route = routes[`${req.method} ${url.pathname}`];
   try {
+    if (secureCookies && !['GET', 'HEAD', 'OPTIONS'].includes(req.method ?? '') && req.headers.origin !== config.publicUrl) {
+      return json(res, 403, { error: 'origem não permitida' });
+    }
+    const url = new URL(req.url ?? '/', 'http://local');
+    const route = routes[`${req.method} ${url.pathname}`];
     if (route) return await route(req, res, url);
     if (url.pathname.startsWith('/api/')) return json(res, 404, { error: 'rota inexistente' });
     if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(req, res, url);
@@ -202,7 +206,11 @@ const server = createServer(async (req, res) => {
 // ---------- tempo real ----------
 const wss = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024 });
 server.on('upgrade', (req, socket, head) => {
-  if (!req.url?.startsWith('/ws')) return socket.destroy();
+  if (req.url?.split('?')[0] !== '/ws') return socket.destroy();
+  if (secureCookies && req.headers.origin !== config.publicUrl) {
+    socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+    return socket.destroy();
+  }
   const who = whoIs(req);
   if (!who) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); return socket.destroy(); }
   wss.handleUpgrade(req, socket, head, (ws) => {
@@ -222,7 +230,7 @@ setInterval(() => {
 }, 15_000);
 setInterval(() => sessions.purge(), 3600_000);
 
-server.listen(config.port, () => {
+server.listen(config.port, config.host, () => {
   console.log(`Virtuta em http://localhost:${config.port} · login Google ${googleEnabled ? 'ativo' : 'desligado'}${config.devLogin ? ' · login de desenvolvimento ativo' : ''}`);
 });
 

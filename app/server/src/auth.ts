@@ -13,7 +13,10 @@ export function parseCookies(req: IncomingMessage) {
   const out: Record<string, string> = {};
   for (const part of (req.headers.cookie ?? '').split(';')) {
     const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    if (i > 0) {
+      try { out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim()); }
+      catch { /* Cookies malformados não devem interromper requisições ou WebSockets. */ }
+    }
   }
   return out;
 }
@@ -61,7 +64,7 @@ export function publicGuest(id: string, name: string): PublicUser {
 export function loginUser(email: string, name: string) {
   email = email.toLowerCase();
   let u = users.byEmail(email);
-  const admin = config.adminEmails.includes(email) || users.all().length === 0;
+  const admin = config.adminEmails.includes(email) || (config.adminEmails.length === 0 && users.all().length === 0);
   if (!u) {
     const taken = new Set(users.all().filter((x) => x.active).map((x) => x.desk));
     const desk = DESKS.find((d) => !taken.has(d.index))?.index ?? null;
