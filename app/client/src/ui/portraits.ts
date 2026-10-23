@@ -3,8 +3,11 @@ import { characterModel } from '../avatar';
 import { disposeCharacter } from '../look';
 import type { Person } from '../people';
 
-/** Renderiza o rosto de cada personagem, para usar na lista e nos cartões de vídeo. */
-export function renderPortraits(people: Person[]) {
+// um renderizador só, reaproveitado: criar um contexto WebGL por chamada é caro e o navegador
+// derruba os mais antigos (às vezes o da cena) quando passam do limite
+let shared: { r: THREE.WebGLRenderer; scene: THREE.Scene; cam: THREE.OrthographicCamera } | null = null;
+function studio() {
+  if (shared) return shared;
   const size = 128;
   const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
   r.setSize(size, size);
@@ -18,7 +21,12 @@ export function renderPortraits(people: Person[]) {
   const cam = new THREE.OrthographicCamera(-0.3, 0.3, 0.3, -0.3, 0.1, 10);
   cam.position.set(0.55, 0.62, 1.6);
   cam.lookAt(0, 0.56, 0);
+  return (shared = { r, scene, cam });
+}
 
+/** Renderiza o rosto de cada personagem, para usar na lista e nos cartões de vídeo. */
+export function renderPortraits(people: Person[]) {
+  const { r, scene, cam } = studio();
   const out: Record<string, string> = {};
   for (const p of people) {
     const { model, animations } = characterModel(p);
@@ -31,6 +39,5 @@ export function renderPortraits(people: Person[]) {
     scene.remove(model);
     disposeCharacter(model);
   }
-  r.dispose();
   return out;
 }

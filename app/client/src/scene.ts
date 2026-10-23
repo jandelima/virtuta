@@ -13,6 +13,14 @@ const VIEW_DIR = new THREE.Vector3(1, 1.15, 1).normalize();
 const BASE_VIEW = 12;
 // parado, o boneco ainda respira: 30 quadros mantêm a animação suave e custam metade
 const IDLE_FPS = 30;
+// com a janela em segundo plano (ou uma janela do app por cima), o escritório segue vivo, mas leve
+const BACKGROUND_FPS = 10, BACKGROUND_ACTIVE_FPS = 30;
+/**
+ * Acima disso (ms por quadro, em movimento) a resolução desce um degrau. Fica acima de 33 ms
+ * de propósito: o modo de economia de energia do navegador limita a 30 quadros sem a máquina
+ * estar lenta, e isso não deve borrar a cena.
+ */
+const SLOW_FRAME = 38;
 
 export class Scene3D {
   readonly renderer: THREE.WebGLRenderer;
@@ -32,6 +40,16 @@ export class Scene3D {
   private lastFrame = 0;
   private lastRender = 0;
   private activeUntil = 0;
+  /**
+   * Qualidade adaptativa: degraus de resolução, do mais nítido ao mais leve. A cena mede o
+   * próprio ritmo em movimento e desce um degrau quando não acompanha; de tempos em tempos
+   * tenta subir de novo. No último degrau, as luminárias da noite também se apagam.
+   */
+  private dprSteps: number[] = [];
+  private dprStep = 0;
+  private frameTimes: number[] = [];
+  private nextUpgrade = 0;
+  private lowPower = false;
   space!: Space;
   theme: Theme = 'day';
   zoom = 1.15;
@@ -105,7 +123,12 @@ export class Scene3D {
   resize() {
     const w = this.viewport.clientWidth, h = this.viewport.clientHeight;
     // resolução limitada: em telas muito densas, 1,5x já fica nítido e custa bem menos
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    const max = Math.min(devicePixelRatio, 1.5);
+    if (this.dprSteps[0] !== max) {
+      this.dprSteps = [...new Set([max, 1.25, 1, 0.85, 0.75].filter((d) => d <= max))];
+      this.dprStep = Math.min(this.dprStep, this.dprSteps.length - 1);
+    }
+    this.renderer.setPixelRatio(this.dprSteps[this.dprStep]);
     this.renderer.setSize(w, h, false);
     this.labels.setSize(w, h);
     const a = w / Math.max(1, h);
@@ -133,7 +156,8 @@ export class Scene3D {
     MAT.slab.color.set(night ? '#2a2c30' : '#c9c4bb');
     this.renderer.toneMappingExposure = night ? 1.15 : 1.0;
     if (this.space) {
-      for (const l of this.space.lamps) l.intensity = night ? (l.userData.night as number) : 0;
+      // de dia as luminárias nem entram no cálculo da luz (cada uma pesa em todos os pixels)
+      for (const l of this.space.lamps) { l.intensity = night ? (l.userData.night as number) : 0; l.visible = night && !this.lowPower; }
       for (const m of this.space.glowMats) m.emissiveIntensity = night ? 1.0 : 0.5;
     }
     const acc = this.accent();
@@ -273,11 +297,37 @@ export class Scene3D {
 
     // sem movimento, desenha só alguns quadros por segundo (as animações de respirar continuam)
     const active = t < this.activeUntil;
-    if (!active && t - this.lastRender < 1000 / IDLE_FPS) return;
+    const fg = document.hasFocus() && !document.body.classList.contains('modal-open');
+    const fps = fg ? (active ? 0 : IDLE_FPS) : (active ? BACKGROUND_ACTIVE_FPS : BACKGROUND_FPS);
+    if (fps && t - this.lastRender < 1000 / fps - 2) return;
+    if (fg && active) this.measure(t - this.lastRender, t);
     this.lastRender = t;
     this.renderer.render(this.scene, this.camera);
     this.labels.render(this.scene, this.camera);
   }
+
+  /** Ajusta a resolução pelo ritmo dos quadros em movimento (sem limite de quadros). */
+  private measure(dt: number, t: number) {
+    if (dt <= 0 || dt > 200) return;
+    this.frameTimes.push(dt);
+    if (this.frameTimes.length < 90) return;
+    const sorted = this.frameTimes.sort((a, b) => a - b), median = sorted[45];
+    this.frameTimes = [];
+    const last = this.dprSteps.length - 1;
+    if (median > SLOW_FRAME) {
+      if (this.dprStep < last) { this.dprStep++; this.resize(); }
+      else if (!this.lowPower) { this.lowPower = true; this.applyTheme(this.theme); }
+      // depois de descer, só tenta subir de novo daqui a um tempo
+      this.nextUpgrade = t + 120_000;
+    } else if (median < 18 && this.dprStep > 0 && t > this.nextUpgrade) {
+      this.dprStep--;
+      this.resize();
+      this.nextUpgrade = t + 120_000;
+    }
+  }
+
+  /** Degrau de qualidade atual (para diagnóstico). */
+  quality() { return { dpr: this.renderer.getPixelRatio(), step: this.dprStep, lowPower: this.lowPower }; }
 
   stats() {
     const i = this.renderer.info;

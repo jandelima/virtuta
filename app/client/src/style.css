@@ -9,7 +9,7 @@
   --acc-ink: #ffffff;
   --acc-soft: #eaeefc;
   --chip: #f1f3f6;
-  --glass: rgba(255, 255, 255, 0.86);
+  --glass: rgba(255, 255, 255, 0.94);
   --glass-line: rgba(20, 30, 50, 0.08);
   --shadow: 0 12px 32px rgba(20, 30, 50, 0.16), 0 2px 6px rgba(20, 30, 50, 0.08);
   --red: #e5484d;
@@ -31,7 +31,7 @@
   --acc-ink: #1d1503;
   --acc-soft: #2e2615;
   --chip: #1f232a;
-  --glass: rgba(22, 25, 31, 0.84);
+  --glass: rgba(22, 25, 31, 0.93);
   --glass-line: rgba(255, 255, 255, 0.08);
   --shadow: 0 14px 34px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
   --red: #f2555a;
@@ -165,7 +165,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--acc); outli
 
 
 /* conversa */
-.conv { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); padding: 10px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow); backdrop-filter: blur(14px); display: flex; flex-direction: column; gap: 9px; z-index: 6; max-width: calc(100% - 32px); }
+.conv { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); padding: 10px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 9px; z-index: 6; max-width: calc(100% - 32px); }
 .conv-h { display: flex; align-items: center; gap: 8px; padding: 0 4px; }
 .conv-h .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6); animation: pulse 1.8s infinite; }
 @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); } 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); } }
@@ -189,7 +189,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--acc); outli
 /* minimapa */
 .map-card { position: absolute; left: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
 .minimap { width: 220px; height: 150px; border-radius: 12px; background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow); cursor: crosshair; }
-.hint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; max-width: 220px; font-size: 11.5px; color: var(--mut); padding: 6px 10px; border-radius: 9px; background: var(--glass); border: 1px solid var(--glass-line); backdrop-filter: blur(10px); width: max-content; }
+.hint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; max-width: 220px; font-size: 11.5px; color: var(--mut); padding: 6px 10px; border-radius: 9px; background: var(--glass); border: 1px solid var(--glass-line); width: max-content; }
 .hint kbd { font: 600 10.5px 'Geist', sans-serif; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
 .zoom { position: absolute; right: 16px; bottom: 16px; display: flex; flex-direction: column; border-radius: 11px; background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow); overflow: hidden; z-index: 5; }
 .zoom button { width: 36px; height: 36px; display: grid; place-items: center; color: var(--mut); }
@@ -197,7 +197,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--acc); outli
 .zoom button + button { border-top: 1px solid var(--line); }
 
 /* dock */
-.dock { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; align-items: center; gap: 5px; padding: 6px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow); backdrop-filter: blur(14px); z-index: 6; }
+.dock { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; align-items: center; gap: 5px; padding: 6px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow); z-index: 6; }
 .db { height: 42px; min-width: 42px; padding: 0 12px; border-radius: 11px; display: flex; align-items: center; justify-content: center; gap: 7px; font-weight: 550; position: relative; }
 .db:hover { background: var(--chip); }
 .db.off { color: var(--red); background: color-mix(in srgb, var(--red) 11%, transparent); }
@@ -207,7 +207,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--acc); outli
 .db .tip { position: absolute; bottom: 52px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 11.5px; padding: 4px 8px; border-radius: 6px; background: #111418; color: #fff; opacity: 0; pointer-events: none; transition: opacity 0.15s; }
 .db:hover .tip { opacity: 1; }
 .dock .div { width: 1px; height: 26px; background: var(--line); margin: 0 3px; }
-.reactions { position: absolute; left: 50%; bottom: 76px; transform: translateX(-50%); display: flex; gap: 4px; padding: 6px; border-radius: 14px; background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow); backdrop-filter: blur(14px); z-index: 7; }
+.reactions { position: absolute; left: 50%; bottom: 76px; transform: translateX(-50%); display: flex; gap: 4px; padding: 6px; border-radius: 14px; background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow); z-index: 7; }
 .reactions button { width: 40px; height: 40px; border-radius: 10px; font-size: 22px; }
 .reactions button:hover { background: var(--chip); transform: scale(1.08); }
 
@@ -217,7 +217,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--acc); outli
 .stage:has(.drawer:not([hidden])) .dock { left: calc((100% - 376px) / 2); }
 @media (max-width: 1700px) { .stage:has(.drawer:not([hidden])) .map-card { display: none; } }
 .toasts { position: absolute; right: 16px; top: 16px; width: 330px; display: flex; flex-direction: column; gap: 8px; z-index: 12; pointer-events: none; }
-.toast { pointer-events: auto; width: 100%; padding: 12px 12px 12px 14px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow); backdrop-filter: blur(14px); display: flex; flex-direction: column; gap: 12px; z-index: 8; animation: slideIn 0.35s ease-out; }
+.toast { pointer-events: auto; width: 100%; padding: 12px 12px 12px 14px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 12px; z-index: 8; animation: slideIn 0.35s ease-out; }
 @keyframes slideIn { from { transform: translateY(-10px); opacity: 0; } }
 .toast .h { display: flex; gap: 10px; align-items: center; }
 .toast .h div { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }

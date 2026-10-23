@@ -235,10 +235,14 @@ export class Shell {
     const pill = $('focusPill');
     const f = app.focus;
     if (!f) {
+      // roda a cada segundo: só refaz quando muda
+      if (pill.dataset.idle === String(app.guest)) return;
+      pill.dataset.idle = String(app.guest);
       pill.innerHTML = app.guest ? '' : `<span class="lbl">${icon('focus')}Foco coletivo</span><button class="pill-btn" id="focusNew">Começar sessão</button>`;
       if (!app.guest) $('focusNew').onclick = () => app.panels.open('foco');
       return;
     }
+    delete pill.dataset.idle;
     const b = app.focusBlock();
     const left = Math.max(0, Math.round(b?.left ?? 0));
     const mm = Math.floor(left / 60), ss = left % 60;

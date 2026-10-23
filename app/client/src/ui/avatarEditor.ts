@@ -55,7 +55,7 @@ class Thumbs {
     disposeCharacter(model);
     return this.r.domElement.toDataURL('image/png');
   }
-  dispose() { this.r.dispose(); }
+  dispose() { this.r.dispose(); this.r.forceContextLoss(); }
 }
 
 const pick = <T,>(a: readonly T[]) => a[Math.floor(Math.random() * a.length)];
@@ -272,7 +272,9 @@ export function openAvatarEditor(initial: Look, name: string, onSave: (look: Loo
     removeEventListener('keydown', onKey);
     if (model) disposeCharacter(model);
     thumbs.dispose();
+    // devolve os contextos WebGL na hora (o navegador limita quantos ficam abertos)
     r.dispose();
+    r.forceContextLoss();
     host.remove();
     document.body.classList.remove('modal-open');
   }

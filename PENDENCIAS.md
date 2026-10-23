@@ -39,3 +39,4 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 - [x] **Cores que vazavam entre partes** (trocar a calça mudava outras coisas; escolher uma cor e ver outra): cada parte do corpo agora tem a sua cor, classificada triângulo a triângulo no modelo.
 - [x] **Mais granularidade e qualidade no avatar:** penteado, expressão e roupa separados; cores para pele, cabelo, blusa, detalhes, calça e sapatos (com cor livre); óculos (de grau, redondos, escuros), bigode, cavanhaque, barba, boné, gorro, fone e brincos.
 - [x] **Criar o avatar é a primeira coisa** que uma pessoa nova faz ao entrar.
+- [x] **Lag em alguns computadores:** luminárias só à noite (de dia pesavam ~40% do desenho sem acender), resolução que se ajusta sozinha quando a máquina não acompanha, menos quadros com a janela em segundo plano, sem desfoque nas barras flutuantes e retratos sem criar um contexto 3D novo a cada atualização.
