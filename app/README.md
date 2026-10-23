@@ -17,7 +17,7 @@ rádio compartilhada, foco coletivo, visitantes e administração.
 
 ## Desenvolvimento local
 
-Requisitos: Node 18+ e Docker.
+Requisitos: Node 22.22+ e Docker.
 
 ```bash
 npm install
