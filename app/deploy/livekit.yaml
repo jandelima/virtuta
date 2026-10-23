@@ -1,0 +1,12 @@
+# LiveKit para uma equipe de até ~10 pessoas. As chaves vêm de LIVEKIT_KEYS (docker-compose).
+port: 7880
+rtc:
+  # mídia por uma porta UDP só (7882) e, se a rede da pessoa bloquear UDP, por TCP (7881)
+  udp_port: 7882
+  tcp_port: 7881
+  use_external_ip: true
+room:
+  empty_timeout: 300
+  max_participants: 30
+logging:
+  level: info

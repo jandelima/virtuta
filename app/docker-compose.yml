@@ -1,0 +1,46 @@
+# Virtuta na VPS: app, LiveKit (voz, vídeo e tela) e Caddy (HTTPS automático).
+# Uso: cp .env.example .env, preencha, aponte o DNS dos dois domínios e rode:
+#   docker compose up -d --build
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PUBLIC_URL: https://${APP_DOMAIN}
+      LIVEKIT_URL: wss://${LIVEKIT_DOMAIN}
+      DEV_LOGIN: "0"
+    volumes:
+      - dados:/data
+    expose:
+      - "8787"
+
+  livekit:
+    image: livekit/livekit-server:v1.13.10
+    restart: unless-stopped
+    # rede do host: o WebRTC precisa das portas UDP/TCP direto, sem tradução do Docker
+    network_mode: host
+    command: --config /etc/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+    volumes:
+      - ./deploy/livekit.yaml:/etc/livekit.yaml:ro
+
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      LIVEKIT_DOMAIN: ${LIVEKIT_DOMAIN}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+
+volumes:
+  dados:
+  caddy:
