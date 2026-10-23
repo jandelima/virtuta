@@ -1,0 +1,38 @@
+[Unit]
+Description=Virtuta virtual office
+After=network.target virtuta-livekit.service
+Wants=virtuta-livekit.service
+
+[Service]
+Type=simple
+User=virtuta
+Group=virtuta
+WorkingDirectory=/opt/virtuta/current
+EnvironmentFile=/etc/virtuta/app.env
+ExecStart=/opt/virtuta/node/bin/node dist/server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+StateDirectory=virtuta
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+LockPersonality=true
+LimitNOFILE=8192
+TasksMax=128
+MemoryHigh=512M
+MemoryMax=768M
+CPUWeight=50
+
+[Install]
+WantedBy=multi-user.target
