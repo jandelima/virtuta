@@ -1,0 +1,26 @@
+# Teste na rede local (npm run lan): HTTPS com certificado do próprio Caddy, sem domínio.
+# O navegador avisa que o certificado não é reconhecido; depois de aceitar, microfone e
+# câmera funcionam (sem HTTPS eles só funcionam em localhost).
+{
+	auto_https disable_redirects
+	local_certs
+}
+
+https://{$LAN_IP}:8443, https://localhost:8443 {
+	tls internal
+	encode {
+		zstd
+		gzip
+		match {
+			header Content-Type text/*
+			header Content-Type application/json*
+			header Content-Type application/javascript*
+			header Content-Type image/svg+xml*
+			header Content-Type model/gltf-binary*
+		}
+	}
+	# o LiveKit entra pelo mesmo endereço, assim basta aceitar o certificado uma vez
+	@rtc path /rtc /rtc/*
+	reverse_proxy @rtc 127.0.0.1:7880
+	reverse_proxy 127.0.0.1:8787
+}
