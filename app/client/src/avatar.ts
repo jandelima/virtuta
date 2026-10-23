@@ -7,6 +7,7 @@ import type { NavGrid } from './world/nav';
 import type { Seat } from './world/space';
 import { STATUS_COLOR, type Person } from './people';
 import { icon } from './ui/icons';
+import { esc } from './ui/dom';
 
 const WALK_SPEED = 2.1;
 /** Escala dos personagens em relação aos modelos originais. */
@@ -122,7 +123,7 @@ export class Avatar {
     const mic = this.inCall ? icon(this.micOn ? 'mic' : 'micOff', this.micOn ? 'mic on' : 'mic') : '';
     const weak = p.unstable ? icon('wifiOff', 'st weak') : '';
     this.labelEl.className = `tag${p.me ? ' me' : ''}${this.speaking ? ' speaking' : ''}${p.guest ? ' guest' : ''}${p.unstable ? ' unstable' : ''}`;
-    this.labelEl.innerHTML = `<i class="dot" style="background:${STATUS_COLOR[p.status]}"></i><b>${p.me ? `${p.name} (você)` : p.name}</b>${extra}${weak}${mic}`;
+    this.labelEl.innerHTML = `<i class="dot" style="background:${STATUS_COLOR[p.status]}"></i><b>${esc(p.short)}${p.me ? ' (você)' : ''}</b>${extra}${weak}${mic}`;
   }
 
   /** Rótulo compacto: só a bolinha de status, sem o nome. */

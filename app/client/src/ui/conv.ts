@@ -94,7 +94,7 @@ export class ConvView {
       v.className = screen ? 'vid contain' : 'vid';
       el.appendChild(v);
     } else el.insertAdjacentHTML('beforeend', `<img class="pt" src="${app.portraits[f.id] ?? ''}" alt=""/><span class="off">${icon('camOff')}</span>`);
-    const label = screen ? `${icon('screen')}${f.id === app.me ? 'Sua tela' : esc(app.name(f.id))}` : `${icon(f.micOn ? 'mic' : 'micOff')}${f.id === app.me ? 'Você' : esc(app.name(f.id))}`;
+    const label = screen ? `${icon('screen')}${f.id === app.me ? 'Sua tela' : esc(app.shortName(f.id))}` : `${icon(f.micOn ? 'mic' : 'micOff')}${f.id === app.me ? 'Você' : esc(app.shortName(f.id))}`;
     el.insertAdjacentHTML('beforeend', `<span class="nm">${label}</span>`);
     if (screen) el.addEventListener('click', () => this.openStage());
     return el;
@@ -133,7 +133,7 @@ export class ConvView {
   private renderStage(feeds: Feed[]) {
     const app = this.app;
     const shares = feeds.filter((f) => f.screen);
-    this.stage.innerHTML = `<div class="pr-h"><b>${shares.length ? 'Apresentação' : 'Conversa'}</b><small>${shares.map((s) => (s.id === app.me ? 'Sua tela' : esc(app.name(s.id)))).join(' · ') || 'Ninguém compartilhando a tela'}</small>
+    this.stage.innerHTML = `<div class="pr-h"><b>${shares.length ? 'Apresentação' : 'Conversa'}</b><small>${shares.map((s) => (s.id === app.me ? 'Sua tela' : esc(app.shortName(s.id)))).join(' · ') || 'Ninguém compartilhando a tela'}</small>
       <div class="pr-tools">${shares.length ? `<button data-tool="ptr" class="${this.tool === 'ptr' ? 'on' : ''}" title="Apontador">${icon('pointer')}</button><button data-tool="pen" class="${this.tool === 'pen' ? 'on' : ''}" title="Marcação temporária">${icon('pen')}</button>${COLORS.map((c) => `<button data-color="${c}" class="sw${this.color === c ? ' on' : ''}" style="--c:${c}" title="Cor"></button>`).join('')}` : ''}</div>
       <button class="btn soft" id="backMap">${icon('map')}Voltar ao mapa</button></div>
       <div class="pr-main n${Math.min(2, shares.length)}" id="prMain"></div>
@@ -147,7 +147,7 @@ export class ConvView {
       const cv = document.createElement('canvas');
       cv.className = 'pr-ink';
       box.appendChild(cv);
-      box.insertAdjacentHTML('beforeend', `<span class="nm">${icon('screen')}${s.id === app.me ? 'Sua tela' : esc(app.name(s.id))}</span>`);
+      box.insertAdjacentHTML('beforeend', `<span class="nm">${icon('screen')}${s.id === app.me ? 'Sua tela' : esc(app.shortName(s.id))}</span>`);
       this.bindInk(cv, s.id);
       main.appendChild(box);
     }

@@ -82,6 +82,14 @@ export class OfficeApp {
   send: Net['send'] = (m) => this.net.send(m);
   name(id: string) { return this.users.get(id)?.name ?? 'Alguém'; }
 
+  /** Primeiro nome; quando outra pessoa tem o mesmo, acrescenta a inicial do último sobrenome. */
+  shortName(id: string) {
+    const words = this.name(id).trim().split(/\s+/);
+    const first = (n: string) => n.trim().split(/\s+/)[0].toLowerCase();
+    const twin = [...this.users.values()].some((u) => u.id !== id && first(u.name) === words[0].toLowerCase());
+    return twin && words.length > 1 ? `${words[0]} ${words[words.length - 1][0].toUpperCase()}.` : words[0];
+  }
+
   start() {
     this.world = buildEscritorio();
     const { before, after } = mergeStatic(this.world.space.group);
@@ -206,6 +214,7 @@ export class OfficeApp {
     return {
       id,
       name: u?.name ?? 'Alguém',
+      short: this.shortName(id),
       model: u?.model ?? 'character-male-e',
       color: u?.color ?? '#7c8597',
       status: this.displayStatus(id),
@@ -249,6 +258,8 @@ export class OfficeApp {
       if (JSON.stringify(prev?.look) !== JSON.stringify(u.look) || prev?.model !== u.model) a.setLook(u.look);
       a.refreshLabel();
     }
+    // um nome novo pode criar (ou desfazer) um xará: os balões dos outros mudam junto
+    if (prev?.name !== u.name) this.refreshAllPeople();
     Object.assign(this.portraits, renderPortraits([this.person(u.id)]));
     this.refreshDesks();
     this.shell.renderAll();

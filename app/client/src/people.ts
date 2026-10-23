@@ -7,6 +7,8 @@ export type Status = 'disp' | 'foco' | 'reuniao' | 'afk' | 'visita';
 export interface Person {
   id: string;
   name: string;
+  /** Nome curto do balão sobre o avatar: o primeiro nome (com a inicial do sobrenome se houver xará). */
+  short: string;
   model: string;
   color: string;
   status: Status;

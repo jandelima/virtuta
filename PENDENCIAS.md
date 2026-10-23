@@ -31,3 +31,4 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 # Rodada 3 — 23/10
 
 - [x] **Caixa de sugestões no lugar do jardim** (atrás do sofá do lounge): púlpito com a caixa, onde as pessoas deixam ideias, melhorias ou problemas do site. Fica registrado no servidor, e a administração vê, trata e copia tudo na aba Sugestões.
+- [x] **Só o primeiro nome no balão sobre o avatar** (e nas miniaturas de vídeo). Se duas pessoas tiverem o mesmo primeiro nome, aparece a inicial do último sobrenome ("Jan F.", "Jan S."). A lista de pessoas e os painéis continuam com o nome completo.
