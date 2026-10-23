@@ -45,6 +45,9 @@ Portas usadas: 8443/tcp (página e LiveKit), 7881/tcp e 7882/udp (mídia).
 
 ## Publicar numa VPS
 
+A implantação desta máquina (`virtuta.site`, Nginx + systemd, sem Docker) está documentada
+em [deploy/PRODUCAO.md](deploy/PRODUCAO.md). As instruções abaixo são a alternativa com Docker.
+
 1. **VPS**: Linux com Docker (1 vCPU e 1 GB de RAM bastam para a equipe; 2 vCPU dão folga para vídeo).
 2. **DNS**: aponte dois domínios para o IP da VPS, por exemplo `escritorio.suaempresa.com.br` e
    `lk.escritorio.suaempresa.com.br`.
