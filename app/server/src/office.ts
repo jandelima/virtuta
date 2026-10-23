@@ -1,5 +1,6 @@
 import type { WebSocket } from 'ws';
 import { DESKS, ENTRY, PROX, REUNIAO, SALA, areaAt, inside } from '../../shared/layout';
+import { sanitizeLook } from '../../shared/look';
 import type { BoardElement, ClientMsg, Conv, FocusBlock, FocusSession, GameState, Presence, PublicUser, RadioItem, RadioState, ServerMsg, Status } from '../../shared/protocol';
 import { boards, guests, invites, notes, settings, users } from './db';
 import { publicGuest, publicUser, randomId, type Who } from './auth';
@@ -215,8 +216,9 @@ export class Office {
         return this.broadcast({ t: 'presence', presence: p.presence });
       }
       case 'look': {
-        if (!member || !m.look || typeof m.look !== 'object') return;
-        users.update(id, { look: m.look });
+        const look = member ? sanitizeLook(m.look) : null;
+        if (!look) return;
+        users.update(id, { look });
         p.user = publicUser(users.get(id)!);
         return this.broadcast({ t: 'user', user: p.user });
       }

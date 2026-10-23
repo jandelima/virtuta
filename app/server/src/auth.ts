@@ -3,7 +3,8 @@ import type { IncomingMessage } from 'node:http';
 import { config, googleEnabled } from './config';
 import { guests, invites, sessions, users, type UserRow } from './db';
 import { DESKS } from '../../shared/layout';
-import type { Look, PublicUser } from '../../shared/protocol';
+import type { PublicUser } from '../../shared/protocol';
+import { sanitizeLook } from '../../shared/look';
 
 export const SESSION_COOKIE = 'vt_sess';
 
@@ -50,7 +51,7 @@ export function publicUser(u: UserRow): PublicUser {
     name: u.name,
     role: u.role,
     desk: u.desk,
-    look: u.look ? (JSON.parse(u.look) as Look) : null,
+    look: u.look ? sanitizeLook(JSON.parse(u.look)) : null,
     model: MODELS[(u.desk ?? h) % MODELS.length],
     color: COLORS[(u.desk ?? h) % COLORS.length],
   };

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { characterModel } from '../avatar';
+import { disposeCharacter } from '../look';
 import type { Person } from '../people';
 
 /** Renderiza o rosto de cada personagem, para usar na lista e nos cartões de vídeo. */
@@ -28,6 +29,7 @@ export function renderPortraits(people: Person[]) {
     r.render(scene, cam);
     out[p.id] = r.domElement.toDataURL('image/png');
     scene.remove(model);
+    disposeCharacter(model);
   }
   r.dispose();
   return out;

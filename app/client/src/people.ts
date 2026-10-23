@@ -1,4 +1,4 @@
-import type { Look } from '../../shared/protocol';
+import type { StoredLook } from '../../shared/protocol';
 
 // Como cada pessoa aparece na interface. "Em reunião" vem de estar na sala de reunião.
 
@@ -18,7 +18,7 @@ export interface Person {
   /** Conexão instável: o servidor aguarda a volta da pessoa. */
   unstable?: boolean;
   space: 'terreo';
-  look?: Look | null;
+  look?: StoredLook | null;
 }
 
 export const STATUS_COLOR: Record<Status, string> = {

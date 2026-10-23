@@ -196,6 +196,8 @@ export class OfficeApp {
       this.sc.start();
       if (me) this.lastSent = { x: me.pos.x, z: me.pos.z, rot: 0, seat: null, at: 0 };
       document.getElementById('loading')?.classList.add('done');
+      // quem chega pela primeira vez monta o próprio avatar antes de tudo
+      if (!this.guest && !this.users.get(this.me)?.look) this.shell.editAvatar(true);
     }
     this.refreshDesks();
     this.refreshGame();
@@ -307,6 +309,7 @@ export class OfficeApp {
     if (!a) return;
     a.root.removeFromParent();
     a.label.element.remove();
+    a.dispose();
     this.avatars.delete(id);
   }
 

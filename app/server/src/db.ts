@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { join } from 'node:path';
 import { config } from './config';
-import type { BoardCopy, BoardElement, BoardSummary, Look, Note, Suggestion, SuggestionKind, SuggestionStatus } from '../../shared/protocol';
+import type { BoardCopy, BoardElement, BoardSummary, Note, StoredLook, Suggestion, SuggestionKind, SuggestionStatus } from '../../shared/protocol';
 import { DESKS } from '../../shared/layout';
 
 // Banco SQLite em arquivo único: integrantes, sessões, convites, bilhetes, quadros e sugestões.
@@ -92,7 +92,7 @@ export const users = {
   create(u: { id: string; email: string; name: string; role: 'member' | 'admin'; desk: number | null }) {
     db.prepare('INSERT INTO users (id, email, name, role, desk, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(u.id, u.email, u.name, u.role, u.desk, now());
   },
-  update(id: string, f: Partial<{ name: string; role: string; desk: number | null; look: Look | null; active: boolean }>) {
+  update(id: string, f: Partial<{ name: string; role: string; desk: number | null; look: StoredLook | null; active: boolean }>) {
     if (f.name !== undefined) db.prepare('UPDATE users SET name = ? WHERE id = ?').run(f.name, id);
     if (f.role !== undefined) db.prepare('UPDATE users SET role = ? WHERE id = ?').run(f.role, id);
     if (f.desk !== undefined) db.prepare('UPDATE users SET desk = ? WHERE id = ?').run(f.desk, id);

@@ -2,22 +2,15 @@
 
 export type Status = 'disp' | 'foco' | 'afk' | 'visita';
 
-export interface Look {
-  gender: 'f' | 'm';
-  head: string;
-  body: string;
-  skin: string;
-  hair: string;
-  top: string;
-  bottom: string;
-}
+import type { StoredLook } from './look';
+export type { StoredLook };
 
 export interface PublicUser {
   id: string;
   name: string;
   role: 'member' | 'admin' | 'guest';
   desk: number | null;
-  look: Look | null;
+  look: StoredLook | null;
   /** Modelo padrão do kit, usado enquanto a pessoa não personaliza o avatar. */
   model: string;
   color: string;
@@ -88,7 +81,7 @@ export interface Suggestion { id: number; kind: SuggestionKind; text: string; au
 export type ClientMsg =
   | { t: 'move'; x: number; z: number; rot: number; seat: string | null }
   | { t: 'status'; status: Status; note: string }
-  | { t: 'look'; look: Look }
+  | { t: 'look'; look: StoredLook }
   | { t: 'react'; emoji: string }
   | { t: 'leaveConv' }
   | { t: 'knock'; to: string; text: string }

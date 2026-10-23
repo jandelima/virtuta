@@ -5,7 +5,7 @@ import { drawMinimap, minimapToWorld } from './minimap';
 import { icon } from './icons';
 import { esc } from './dom';
 import { openAvatarEditor } from './avatarEditor';
-import { defaultLook } from '../look';
+import { resolveLook } from '../look';
 import { api } from '../api';
 
 // Moldura do escritório: topo, lateral (áreas e pessoas), dock, minimapa e telas de estado.
@@ -139,10 +139,11 @@ export class Shell {
     });
   }
 
-  editAvatar() {
+  /** Abre o criador de avatar; `welcome` é a primeira entrada de quem ainda não tem um. */
+  editAvatar(welcome = false) {
     const app = this.app;
     const u = app.users.get(app.me)!;
-    openAvatarEditor(u.look ?? defaultLook(u.model), u.name, (look) => app.send({ t: 'look', look }));
+    openAvatarEditor(resolveLook(u.look, u.model), u.name, (look) => app.send({ t: 'look', look }), { welcome });
   }
 
   renderAreas() {

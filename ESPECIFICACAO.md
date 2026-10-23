@@ -169,7 +169,12 @@ Permanecem abertos o controle da fila, as permissões para trocar vídeos, o com
 - Uma pessoa pode convidar colegas para uma pausa no lounge.
 - A adesão às pausas é voluntária.
 - A área de lazer oferece jogos simples compartilhados, com modalidades a selecionar.
-- Personalização dos avatares e elementos do escritório será detalhada após a escolha da direção visual.
+- Personalização do avatar (definida em 23/10):
+  - Quem entra pela primeira vez cria o avatar antes de tudo; depois, muda pelo próprio menu.
+  - Peças: penteado (11, incluindo careca), expressão (5) e roupa (10), combináveis entre si.
+  - Cores separadas para pele, cabelo (vale para barba e bigode), blusa, detalhes da roupa (gravata, colar, suspensório), calça ou saia e sapatos, com paleta e cor livre.
+  - Acessórios opcionais: óculos (de grau, redondos ou escuros, com cor da armação), bigode, cavanhaque ou barba, boné ou gorro (com cor), fone de ouvido (com cor) e brincos.
+  - O que aparece no criador é exatamente o que a equipe vê no escritório.
 
 ## 13. Visitantes e administração
 

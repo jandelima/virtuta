@@ -1,24 +1,20 @@
 import * as THREE from 'three';
-import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { characterUrl, gltf } from './assets';
-import { buildCharacter, type Look } from './look';
+import { buildCharacter, disposeCharacter, resolveLook, type StoredLook } from './look';
 import type { NavGrid } from './world/nav';
 import type { Seat } from './world/space';
 import { STATUS_COLOR, type Person } from './people';
 import { icon } from './ui/icons';
 import { esc } from './ui/dom';
 
-const WALK_SPEED = 2.1;
+/** Metros por segundo; a animação de andar acompanha para os pés não deslizarem. */
+const WALK_SPEED = 2.6;
 /** Escala dos personagens em relação aos modelos originais. */
 export const CHAR_SCALE = 1.35;
 
-/** Modelo 3D de uma pessoa: o visual personalizado, se houver, ou o personagem original do kit. */
+/** Modelo 3D de uma pessoa: o visual escolhido ou, sem personalização, o do personagem do kit. */
 export function characterModel(p: Person) {
-  if (p.look) return buildCharacter(p.look);
-  const src = gltf(characterUrl(p.model));
-  const model = cloneSkinned(src.scene);
-  return { model, animations: src.animations };
+  return buildCharacter(resolveLook(p.look, p.model));
 }
 
 // sombra simples no chão: bem mais leve que projetar o personagem no mapa de sombras
@@ -94,7 +90,7 @@ export class Avatar {
   private mount() {
     const { model, animations } = characterModel(this.person);
     const playing = this.current ? [...this.actions].find(([, a]) => a === this.current)?.[0] : undefined;
-    if (this.model) { this.mixer.stopAllAction(); this.root.remove(this.model); }
+    if (this.model) { this.mixer.stopAllAction(); this.root.remove(this.model); disposeCharacter(this.model); }
     model.scale.setScalar(CHAR_SCALE);
     model.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; } });
     this.root.add(model);
@@ -106,10 +102,13 @@ export class Avatar {
     if (playing) this.play(playing, 0);
   }
 
-  setLook(look: Look | null) {
+  setLook(look: StoredLook | null) {
     this.person.look = look;
     this.mount();
   }
+
+  /** Libera as malhas geradas para este personagem (ao sair de cena). */
+  dispose() { if (this.model) disposeCharacter(this.model); }
 
   get pos() { return this.root.position; }
   get moving() { return this.path.length > 0; }
@@ -140,7 +139,7 @@ export class Avatar {
     const next = this.actions.get(name);
     if (!next || next === this.current) return;
     next.reset().setEffectiveWeight(1).fadeIn(fade).play();
-    next.timeScale = name === 'walk' ? 1.25 : 1;
+    next.timeScale = name === 'walk' ? 1.25 * WALK_SPEED / 2.1 : 1;
     this.current?.fadeOut(fade);
     this.current = next;
   }
