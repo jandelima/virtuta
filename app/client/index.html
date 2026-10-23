@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Virtuta</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='7' fill='%233b5bdb'/%3E%3Cpath d='M7 8l5 9 5-9' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" />
+  </head>
+  <body>
+    <div id="app" hidden>
+      <header class="top">
+        <div class="brand">
+          <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="7" class="logo-bg" /><path d="M7 8l5 9 5-9" class="logo-v" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          <b id="officeName">Virtuta</b><span class="sep">/</span><span class="crumb" id="crumb"></span>
+        </div>
+        <div class="focus-pill" id="focusPill"></div>
+        <div class="top-right">
+          <button class="iconbtn" id="themeBtn"></button>
+          <button class="iconbtn" id="bell" aria-label="Avisos"></button>
+          <div class="me-wrap">
+            <button class="me" id="me"></button>
+            <div class="menu" id="statusMenu" hidden></div>
+          </div>
+        </div>
+      </header>
+      <aside class="side">
+        <label class="search"><span id="searchIcon"></span><input id="search" placeholder="Buscar" autocomplete="off" /><kbd>Ctrl K</kbd></label>
+        <div class="sec"><span>Lugares</span></div>
+        <div id="spaces" class="spaces"></div>
+        <div class="sec"><span>Pessoas</span><span id="count"></span></div>
+        <div class="people" id="people"></div>
+        <div class="radio" id="radio"></div>
+      </aside>
+      <main class="stage" id="stage">
+        <div id="viewport"></div>
+        <div class="conn" id="conn" hidden></div>
+        <div class="conv" id="conv" hidden></div>
+        <div class="present" id="present" hidden></div>
+        <div class="map-card">
+          <canvas class="minimap" id="minimap" width="440" height="300"></canvas>
+          <div class="hint" id="hint"></div>
+        </div>
+        <div class="zoom" id="zoom"></div>
+        <div class="dock" id="dock"></div>
+        <div class="reactions" id="reactions" hidden></div>
+        <div class="toasts" id="toasts"></div>
+        <aside class="drawer" id="drawer" hidden></aside>
+        <div class="screen" id="screen" hidden></div>
+      </main>
+    </div>
+    <div class="gate" id="gate" hidden></div>
+    <div class="loading" id="loading">
+      <div class="loading-card">
+        <b>Abrindo o escritório</b>
+        <div class="bar"><i id="loadbar"></i></div>
+        <small id="loadtxt">Conectando…</small>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
