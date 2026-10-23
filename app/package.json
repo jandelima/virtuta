@@ -1,0 +1,35 @@
+{
+  "name": "virtuta",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "tsx watch server/src/index.ts",
+    "dev:client": "vite --config client/vite.config.ts",
+    "build": "npm run check && vite build --config client/vite.config.ts && node scripts/build-server.mjs",
+    "check": "tsc --noEmit -p client/tsconfig.json && tsc --noEmit -p server/tsconfig.json",
+    "start": "node dist/server.js",
+    "lan": "node scripts/lan.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^18.19.130",
+    "@types/three": "^0.180.0",
+    "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2",
+    "livekit-client": "^2.23.0",
+    "puppeteer-core": "^24.43.1",
+    "three": "^0.186.1",
+    "tsx": "^4.23.15",
+    "typescript": "5.8",
+    "vite": "^5.4.21"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
