@@ -45,6 +45,8 @@ export class RadioPlayer {
   private player: YTPlayer | null = null;
   private ready = false;
   private playing = 0;
+  /** Item e início do que está carregado: com uma música só na programação, o id se repete a cada volta. */
+  private loaded = '';
   private volume = 50;
   private driftTimer = 0;
   /** A pessoa ligou "Ouvir" (vale enquanto ela estiver na sala). */
@@ -98,6 +100,7 @@ export class RadioPlayer {
     this.ready = false;
     this.parts().yt.replaceChildren();
     this.playing = 0;
+    this.loaded = '';
     clearInterval(this.driftTimer);
   }
 
@@ -109,9 +112,11 @@ export class RadioPlayer {
     this.app.panels.refresh('radio');
     const cur = this.app.radio.current;
     if (!this.listening || !cur) { if (this.player) this.stop(); return; }
-    if (this.playing === cur.id && this.player) return;
+    const key = `${cur.id}@${this.app.radio.startedAt}`;
+    if (this.loaded === key && this.player) return;
     await loadApi();
     this.playing = cur.id;
+    this.loaded = key;
     const start = this.target();
     if (!this.player) {
       const host = this.parts().yt;
@@ -146,7 +151,7 @@ export class RadioPlayer {
       this.player.setVolume(this.volume);
     }
     clearInterval(this.driftTimer);
-    this.driftTimer = window.setInterval(() => this.realign(), 10_000);
+    this.driftTimer = window.setInterval(() => this.realign(), 5_000);
   }
 
   private realign() {
@@ -156,7 +161,10 @@ export class RadioPlayer {
     // transmissões ao vivo não têm duração: o próprio YouTube mantém todos no ao vivo
     if (!dur || !isFinite(dur)) return;
     const want = this.target();
-    if (want < dur && Math.abs(p.getCurrentTime() - want) > DRIFT) p.seekTo(want, true);
+    // pela programação esta música já acabou (o YouTube recomeça do zero quem pede além do fim):
+    // segue para a próxima, para todos voltarem a ouvir a mesma coisa
+    if (want > dur + DRIFT) this.app.send({ t: 'radioEnded', itemId: this.playing });
+    else if (want < dur && Math.abs(p.getCurrentTime() - want) > DRIFT) p.seekTo(want, true);
   }
 
   /** O player fica num elemento fixo: redesenhar o cartão não pode recriar o iframe. */

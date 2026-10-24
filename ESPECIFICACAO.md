@@ -154,6 +154,7 @@ Visibilidade, notificação, organização de bilhetes lidos, exclusão e prazo 
 
 - A rádio é compartilhada e tem adesão voluntária.
 - A rádio fica na sala da equipe: toca para quem ligou "Ouvir" enquanto estiver lá dentro. Ao sair da sala a música para; ao voltar, retoma no ponto em que a rádio está.
+- Sem nenhum ouvinte, a rádio pausa: quem ligar depois retoma a música do ponto onde ela parou, e quem entra em seguida ouve sincronizado com os demais.
 - A fonte inicial são vídeos ou links do YouTube, reproduzidos pelo player incorporado.
 - Quem adere acompanha a programação comum e controla individualmente seu volume ou saída.
 - Entrar no escritório não inicia a rádio automaticamente.

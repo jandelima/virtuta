@@ -44,6 +44,8 @@ export class Office {
   private doorAllowed = new Set<string>();
   private radio: RadioState = { queue: [], current: null, startedAt: 0, listeners: [] };
   private radioSeq = 1;
+  /** Quando a rádio ficou sem ouvintes: sem ninguém escutando ela pausa, em vez de seguir sozinha. */
+  private radioPausedAt = 0;
   private focus: FocusSession | null = null;
   private focusBlock = -1;
   private game: GameState = emptyGame();
@@ -127,7 +129,7 @@ export class Office {
     this.people.delete(id);
     this.leaveConv(id);
     this.doorAllowed.delete(id);
-    this.radio.listeners = this.radio.listeners.filter((x) => x !== id);
+    this.radioDrop(id);
     if (this.focus) this.focus.participants = this.focus.participants.filter((x) => x !== id);
     for (const [bid, set] of this.editors) if (set.delete(id)) this.broadcastEditors(bid);
     if (this.game.players.includes(id)) this.gameLeave(id);
@@ -203,7 +205,7 @@ export class Office {
         this.dirty.add(id);
         // a rádio só toca dentro da sala da equipe
         if (this.radio.listeners.includes(id) && !inside(SALA, m.x, m.z)) {
-          this.radio.listeners = this.radio.listeners.filter((x) => x !== id);
+          this.radioDrop(id);
           this.broadcastRadio();
         }
         return;
@@ -291,18 +293,27 @@ export class Office {
       }
       case 'radioJoin': {
         if (!member || !inside(SALA, p.presence.x, p.presence.z)) return;
-        if (!this.radio.listeners.includes(id)) this.radio.listeners.push(id);
+        if (!this.radio.listeners.includes(id)) {
+          // primeira pessoa depois de uma pausa: a música retoma de onde parou
+          if (!this.radio.listeners.length && this.radioPausedAt) this.radio.startedAt += Date.now() - this.radioPausedAt;
+          this.radioPausedAt = 0;
+          this.radio.listeners.push(id);
+        }
         if (!this.radio.current) this.radioAdvance();
         return this.broadcastRadio();
       }
       case 'radioLeave': {
-        this.radio.listeners = this.radio.listeners.filter((x) => x !== id);
+        this.radioDrop(id);
         return this.broadcastRadio();
       }
       case 'radioAdd': return void this.radioAdd(p, m.url);
       case 'radioSkip':
-      case 'radioEnded':
         if (this.radio.current?.id === m.itemId) this.radioAdvance();
+        return;
+      // cada ouvinte avisa quando a música acaba: só o primeiro aviso conta (com uma música só
+      // na programação o id se repete, então os avisos seguintes chegam com a música recém-começada)
+      case 'radioEnded':
+        if (this.radio.current?.id === m.itemId && Date.now() - this.radio.startedAt > 5000) this.radioAdvance();
         return;
       case 'radioError':
         if (this.radio.current?.id === m.itemId) {
@@ -591,11 +602,18 @@ export class Office {
     else { this.saveRadio(); this.broadcastRadio(); }
   }
 
+  private radioDrop(id: string) {
+    if (!this.radio.listeners.includes(id)) return;
+    this.radio.listeners = this.radio.listeners.filter((x) => x !== id);
+    if (!this.radio.listeners.length) this.radioPausedAt = Date.now();
+  }
+
   private radioAdvance() {
     // a programação é uma fila circular: o que tocou volta para o fim
     if (this.radio.current) this.radio.queue.push(this.radio.current);
     this.radio.current = this.radio.queue.shift() ?? null;
     this.radio.startedAt = Date.now();
+    this.radioPausedAt = this.radio.listeners.length ? 0 : Date.now();
     this.saveRadio();
     this.broadcastRadio();
   }

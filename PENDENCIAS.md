@@ -47,3 +47,4 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 - [x] **Mesas da fileira de baixo da sala juntas, como a bancada de cima**, sem mudar tamanho nem posição de mesas, cadeiras e computadores.
 - [x] **Piso da sala da equipe menos branco e brilhante:** off-white quente e fosco.
 - [x] **Trocar de lugar a cadeira laranja e a preta** da bancada principal.
+- [x] **Rádio com problemas para tocar links do YouTube:** sem ouvintes a rádio continuava correndo no relógio do servidor; quem ligava depois pedia um ponto além do fim da música, o YouTube recomeçava do zero para cada um e ninguém ficava sincronizado. Agora a rádio pausa sem ouvintes e retoma de onde parou; se a posição passar do fim, segue para a próxima; com uma música só na programação, ela repete.
