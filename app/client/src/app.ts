@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { CAFE_SPOT, REUNIAO, REUNIAO_DOOR, SALA, SALA_DOOR, areaAt, inside } from '../../shared/layout';
-import type { BoardElement, Conv, FocusSession, GameState, Note, Presence, PublicUser, RadioState, ServerMsg, Settings, Status as NetStatus } from '../../shared/protocol';
+import type { BoardElement, Conv, FocusSession, GameState, Note, Presence, PublicUser, RadioState, ServerMsg, Settings, StoredLook, Status as NetStatus } from '../../shared/protocol';
+import { api } from './api';
 import { Avatar } from './avatar';
 import { Media } from './media';
 import { Net, type NetState } from './net';
@@ -249,6 +250,11 @@ export class OfficeApp {
       t -= b.minutes;
     }
     return null;
+  }
+
+  async saveLook(look: StoredLook) {
+    const user = await api.saveLook(look);
+    this.upsertUser(user);
   }
 
   private upsertUser(u: PublicUser) {

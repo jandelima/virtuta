@@ -80,8 +80,9 @@ export interface EditorOptions {
   welcome?: boolean;
 }
 
-export function openAvatarEditor(initial: Look, name: string, onSave: (look: Look) => void, opts: EditorOptions = {}) {
+export function openAvatarEditor(initial: Look, name: string, onSave: (look: Look) => Promise<void>, opts: EditorOptions = {}) {
   let look: Look = { ...initial };
+  let saving = false;
   let tab: Tab = 'rosto';
   const host = document.createElement('div');
   host.className = 'ae-backdrop';
@@ -98,6 +99,7 @@ export function openAvatarEditor(initial: Look, name: string, onSave: (look: Loo
           ${opts.welcome ? '' : `<button class="iconbtn" data-close aria-label="Fechar">${icon('x')}</button>`}</div>
         <div class="tabs ae-tabs" role="tablist">${(['rosto', 'cabelo', 'roupa', 'acessorios'] as Tab[]).map((t) => `<button class="tab" role="tab" data-tab="${t}">${{ rosto: 'Rosto', cabelo: 'Cabelo', roupa: 'Roupa', acessorios: 'Acessórios' }[t]}</button>`).join('')}</div>
         <div class="ae-opts"></div>
+        <p class="ae-error" role="alert" hidden></p>
         <div class="ae-foot"><button class="btn soft" data-random>${icon('shuffle')}Surpreenda-me</button><span></span>
           ${opts.welcome ? '' : '<button class="btn ghost" data-close>Cancelar</button>'}
           <button class="btn primary" data-save>${opts.welcome ? 'Entrar no escritório' : 'Salvar avatar'}</button></div>
@@ -243,7 +245,31 @@ export function openAvatarEditor(initial: Look, name: string, onSave: (look: Loo
     rebuildPreview(celebrate);
   };
 
+  const save = async () => {
+    if (saving) return;
+    saving = true;
+    const button = $<HTMLButtonElement>('[data-save]');
+    const label = button.textContent;
+    const error = $<HTMLParagraphElement>('.ae-error');
+    error.hidden = true;
+    host.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input').forEach((el) => { el.disabled = true; });
+    button.textContent = 'Salvando…';
+    try {
+      await onSave({ ...look });
+      saving = false;
+      close();
+    } catch (e) {
+      saving = false;
+      host.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input').forEach((el) => { el.disabled = false; });
+      button.textContent = label;
+      error.textContent = e instanceof Error && !['TypeError', 'TimeoutError', 'AbortError'].includes(e.name)
+        ? e.message : 'Não foi possível salvar. Verifique sua conexão e tente novamente.';
+      error.hidden = false;
+    }
+  };
+
   host.addEventListener('click', (e) => {
+    if (saving) return;
     const t = e.target as HTMLElement;
     if ((t === host && !opts.welcome) || t.closest('[data-close]')) return close();
     const tb = t.closest<HTMLElement>('[data-tab]');
@@ -253,7 +279,7 @@ export function openAvatarEditor(initial: Look, name: string, onSave: (look: Loo
     const sw = t.closest<HTMLElement>('button.sw');
     if (sw) return update({ [sw.dataset.key!]: sw.dataset.v! });
     if (t.closest('[data-random]')) return update(randomLook(), true);
-    if (t.closest('[data-save]')) { onSave(look); close(); }
+    if (t.closest('[data-save]')) void save();
   });
   // cor livre: a prévia acompanha enquanto a pessoa arrasta no seletor
   host.addEventListener('input', (e) => {
@@ -267,6 +293,7 @@ export function openAvatarEditor(initial: Look, name: string, onSave: (look: Loo
   addEventListener('keydown', onKey);
 
   function close() {
+    if (saving) return;
     cancelAnimationFrame(raf);
     cancelAnimationFrame(pumping);
     removeEventListener('keydown', onKey);

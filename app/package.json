@@ -10,6 +10,7 @@
     "build": "npm run check && vite build --config client/vite.config.ts && node scripts/build-server.mjs",
     "check": "tsc --noEmit -p client/tsconfig.json && tsc --noEmit -p server/tsconfig.json",
     "test:security": "node --test tests/security.test.mjs",
+    "test:avatar": "node --test tests/avatar.test.mjs",
     "start": "node dist/server.js",
     "lan": "node scripts/lan.mjs"
   },

@@ -119,3 +119,33 @@ test('cookies malformados não derrubam HTTP nem upgrade WebSocket', async () =>
   assert.equal((await fetch(base + '/api/health')).status, 200);
   assert.equal(child.exitCode, null);
 });
+
+test('visual confirmado pela API fica no SQLite e volta em uma nova conexão', async () => {
+  const look = { hairStyle: 'male-f', face: 'male-d', outfit: 'male-a', top: '#3b5bdb', headphones: true, earrings: false };
+  const headers = { origin: env.PUBLIC_URL, cookie: 'vt_sess=test-session', 'content-type': 'application/json' };
+  const save = () => fetch(base + '/api/me/look', { method: 'POST', headers, body: JSON.stringify({ look }) });
+  assert.equal((await fetch(base + '/api/me/look', { method: 'POST', headers: { origin: env.PUBLIC_URL }, body: '{}' })).status, 401);
+  assert.equal((await fetch(base + '/api/me/look', { method: 'POST', headers: { ...headers, origin: 'https://evil.example' }, body: JSON.stringify({ look }) })).status, 403);
+  const response = await save();
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).user.look, look);
+  assert.deepEqual(JSON.parse(db.prepare('SELECT look FROM users WHERE id = ?').get('test-user').look), look);
+  const me = await fetch(base + '/api/me', { headers });
+  assert.deepEqual((await me.json()).user.look, look);
+  const init = await new Promise((resolveInit, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { origin: env.PUBLIC_URL, headers, handshakeTimeout: 3000 });
+    const timeout = setTimeout(() => { ws.terminate(); reject(new Error('Estado inicial não recebido')); }, 3000);
+    ws.on('error', reject);
+    ws.on('message', (data) => {
+      const message = JSON.parse(String(data));
+      if (message.t !== 'init') return;
+      clearTimeout(timeout);
+      ws.close();
+      resolveInit(message);
+    });
+  });
+  assert.deepEqual(init.users.find((u) => u.id === 'test-user').look, look);
+  const invalid = await fetch(base + '/api/me/look', { method: 'POST', headers, body: JSON.stringify({ look: { hairStyle: 'inexistente' } }) });
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(JSON.parse(db.prepare('SELECT look FROM users WHERE id = ?').get('test-user').look), look);
+});

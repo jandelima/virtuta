@@ -143,7 +143,7 @@ export class Shell {
   editAvatar(welcome = false) {
     const app = this.app;
     const u = app.users.get(app.me)!;
-    openAvatarEditor(resolveLook(u.look, u.model), u.name, (look) => app.send({ t: 'look', look }), { welcome });
+    openAvatarEditor(resolveLook(u.look, u.model), u.name, (look) => app.saveLook(look), { welcome });
   }
 
   renderAreas() {

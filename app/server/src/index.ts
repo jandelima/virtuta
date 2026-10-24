@@ -8,6 +8,7 @@ import { SESSION_COOKIE, googleAuthUrl, googleExchange, loginGuest, loginUser, m
 import { Office } from './office';
 import { DESKS } from '../../shared/layout';
 import type { SuggestionStatus } from '../../shared/protocol';
+import { sanitizeLook } from '../../shared/look';
 
 const office = new Office();
 
@@ -46,6 +47,17 @@ const routes: Record<string, Handler> = {
       return json(res, 200, { config: cfg, user: { id: g.id, name: g.name, role: 'guest' } });
     }
     return json(res, 200, { config: cfg, user: publicUser(users.get(who.id)!), email: users.get(who.id)!.email });
+  },
+  'POST /api/me/look': async (req, res) => {
+    const who = whoIs(req);
+    if (!who) return json(res, 401, { error: 'Sua sessão expirou. Entre novamente.' });
+    if (who.guest) return json(res, 403, { error: 'Somente integrantes podem salvar um avatar.' });
+    const b = await body<{ look?: unknown }>(req);
+    const look = sanitizeLook(b?.look);
+    if (!look) return json(res, 400, { error: 'Visual inválido.' });
+    users.update(who.id, { look });
+    office.userChanged(who.id);
+    json(res, 200, { user: publicUser(users.get(who.id)!) });
   },
 
   'GET /api/auth/google': (_req, res) => {

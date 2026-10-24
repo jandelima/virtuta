@@ -1,6 +1,6 @@
 // Chamadas HTTP ao servidor.
 
-import type { Suggestion, SuggestionKind, SuggestionStatus } from '../../shared/protocol';
+import type { PublicUser, StoredLook, Suggestion, SuggestionKind, SuggestionStatus } from '../../shared/protocol';
 
 export interface MeResponse {
   config: { googleEnabled: boolean; devLogin: boolean; officeName: string; domain: string };
@@ -8,12 +8,13 @@ export interface MeResponse {
   email?: string;
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const r = await fetch(path, {
     method,
     headers: body ? { 'content-type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
     credentials: 'same-origin',
+    signal,
   });
   const data = (await r.json().catch(() => ({}))) as T & { error?: string };
   if (!r.ok && r.status !== 401) throw new Error(data.error ?? `Erro ${r.status}`);
@@ -22,6 +23,11 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 export const api = {
   me: () => call<MeResponse>('GET', '/api/me'),
+  saveLook: async (look: StoredLook): Promise<PublicUser> => {
+    const result = await call<{ user?: PublicUser }>('POST', '/api/me/look', { look }, AbortSignal.timeout(15_000));
+    if (!result.user) throw new Error('Sua sessão expirou. Entre novamente.');
+    return result.user;
+  },
   devLogin: (name: string, email?: string) => call<{ ok: boolean }>('POST', '/api/auth/dev', { name, email }),
   logout: () => call('POST', '/api/auth/logout'),
   mediaToken: () => call<{ url: string; token: string }>('GET', '/api/media-token'),
