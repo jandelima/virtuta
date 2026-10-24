@@ -13,7 +13,7 @@ import { boardTex, gameTex, tvTex } from './live';
 
 const DESK_W = 1.8, DESK_D = 0.8, DESK_H = 0.38 * FS;
 const opposite: Record<Facing, Facing> = { n: 's', s: 'n', e: 'w', w: 'e' };
-const CHAIR_COLORS = ['#2f4f9a', '#9b3a36', '#2f6b52', '#4a4f5a', '#b4692c', '#5d4387', '#22708c', '#8c7330', '#7a3d5c', '#3f6f8f'];
+const CHAIR_COLORS = ['#2f4f9a', '#9b3a36', '#2f6b52', '#b4692c', '#4a4f5a', '#5d4387', '#22708c', '#8c7330', '#7a3d5c', '#3f6f8f'];
 
 export interface DeskHandle { desk: Desk; seat: string; plate: THREE.Mesh; note: THREE.Mesh }
 
@@ -145,7 +145,8 @@ export function buildEscritorio(): World {
 
   // --- pisos: um por área, sem sobreposição
   const floors: Record<string, THREE.Material> = {
-    sala: floorMat(tiles('#f3f2ef', '#efeeea', 'rgba(60,60,60,0.10)', 4), 0.35),
+    // off-white quente e fosco: o branco puro com brilho cansava a vista
+    sala: floorMat(tiles('#ddd6ca', '#d8d1c4', 'rgba(80,65,45,0.12)', 4), 0.75),
     reuniao: floorMat(carpet('#aab5c4', '#4d5a6e', 3), 0.95),
     recepcao: floorMat(concrete('#e4e0d9', 12), 0.6),
     cafe: floorMat(tiles('#ebe8e2', '#dcd7cf', 'rgba(0,0,0,0.06)', 8), 0.6),

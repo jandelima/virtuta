@@ -45,3 +45,5 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 
 - [x] **Boneco entrando na parede no canto da porta da sala da equipe** (porta junto à parede do fundo): o vão da porta liberava também a faixa colada na parede do fundo.
 - [x] **Mesas da fileira de baixo da sala juntas, como a bancada de cima**, sem mudar tamanho nem posição de mesas, cadeiras e computadores.
+- [x] **Piso da sala da equipe menos branco e brilhante:** off-white quente e fosco.
+- [x] **Trocar de lugar a cadeira laranja e a preta** da bancada principal.
