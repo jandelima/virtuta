@@ -336,5 +336,11 @@ export class Space {
       if (horiz) this.nav.open(s + 0.05, fixed - 0.3, e - 0.05, fixed + 0.3);
       else this.nav.open(fixed - 0.3, s + 0.05, fixed + 0.3, e - 0.05);
     }
+    // ...mas sem liberar o miolo de outra parede que encosta no vão (porta junto a um canto)
+    if (cuts.length) for (const w of this.walls) {
+      const core = 0.24;
+      if (w.z1 === w.z2) this.nav.block(w.x1, w.z1 - core, w.x2 - 0.01, w.z1 + core);
+      else this.nav.block(w.x1 - core, w.z1, w.x1 + core, w.z2 - 0.01);
+    }
   }
 }

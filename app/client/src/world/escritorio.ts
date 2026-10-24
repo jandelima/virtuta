@@ -177,6 +177,12 @@ export function buildEscritorio(): World {
   boardsMap.set('sala', salaBoard.mat);
   sp.interactive('board:sala', 'Quadro da sala', 'Abrir quadro', [salaBoard.obj]);
   const desks = DESKS.map((d) => station(sp, d));
+  // mesas lado a lado formam uma bancada só: o vão entre duas vizinhas ganha um trecho de tampo
+  for (const a of DESKS) {
+    const b = DESKS.find((o) => o.z === a.z && o.side === a.side && o.x > a.x && o.x - a.x < DESK_W + 1);
+    const gap = b ? b.x - a.x - DESK_W : 0;
+    if (b && gap > 0.01) sp.model('desk', (a.x + b.x) / 2, a.z, { rot: FACE[a.side], s: [gap / 0.72, FS, DESK_D / 0.38] });
+  }
   // rádio da equipe: em cima do armário, perto da porta; toca para quem está na sala
   const radio = sp.model('radio', SALA.x2 - 0.32, salaCabinets[0].box.getCenter(new THREE.Vector3()).z, { rot: FACE.w, y: low, block: false, s: FS * 1.3 });
   sp.interactive('radio', 'Rádio da equipe', 'Ouvir a rádio', [radio.obj, salaCabinets[0].obj]);

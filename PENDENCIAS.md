@@ -40,3 +40,8 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 - [x] **Mais granularidade e qualidade no avatar:** penteado, expressão e roupa separados; cores para pele, cabelo, blusa, detalhes, calça e sapatos (com cor livre); óculos (de grau, redondos, escuros), bigode, cavanhaque, barba, boné, gorro, fone e brincos.
 - [x] **Criar o avatar é a primeira coisa** que uma pessoa nova faz ao entrar.
 - [x] **Lag em alguns computadores:** luminárias só à noite (de dia pesavam ~40% do desenho sem acender), resolução que se ajusta sozinha quando a máquina não acompanha, menos quadros com a janela em segundo plano, sem desfoque nas barras flutuantes e retratos sem criar um contexto 3D novo a cada atualização.
+
+# Rodada 5 — 23/10
+
+- [x] **Boneco entrando na parede no canto da porta da sala da equipe** (porta junto à parede do fundo): o vão da porta liberava também a faixa colada na parede do fundo.
+- [x] **Mesas da fileira de baixo da sala juntas, como a bancada de cima**, sem mudar tamanho nem posição de mesas, cadeiras e computadores.
