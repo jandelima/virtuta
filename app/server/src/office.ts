@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import { DESKS, ENTRY, GUEST_ENTRY, PROX, REUNIAO, SALA, areaAt, inside } from '../../shared/layout';
+import { AREAS, DESKS, ENTRY, GUEST_ENTRY, PROX, REUNIAO, SALA, areaAt, inside } from '../../shared/layout';
 import { sanitizeLook } from '../../shared/look';
 import type { BoardElement, ClientMsg, Conv, FocusBlock, FocusSession, GameState, Presence, PublicUser, RadioItem, RadioState, ServerMsg, Status } from '../../shared/protocol';
 import { boards, guests, invites, notes, settings, users } from './db';
@@ -25,6 +25,13 @@ const send = (ws: WebSocket | null, m: ServerMsg) => {
   if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(m));
 };
 const finite = (n: unknown, lo: number, hi: number) => typeof n === 'number' && Number.isFinite(n) && n >= lo && n <= hi;
+// A validação acompanha a planta; a margem cobre as passagens nas portas.
+const movementBounds = {
+  x1: Math.min(...AREAS.map((a) => a.x1)) - 2,
+  x2: Math.max(...AREAS.map((a) => a.x2)) + 2,
+  z1: Math.min(...AREAS.map((a) => a.z1)) - 2,
+  z2: Math.max(...AREAS.map((a) => a.z2)) + 2,
+};
 const clean = (s: unknown, max: number) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 const dist = (a: Presence, b: Presence) => Math.hypot(a.x - b.x, a.z - b.z);
 // ambientes diferentes nunca formam conversa juntos
@@ -199,7 +206,7 @@ export class Office {
     switch (m.t) {
       case 'ping': return send(p.ws, { t: 'pong', serverTime: Date.now() });
       case 'move': {
-        if (!finite(m.x, -2, 52) || !finite(m.z, -2, 12) || !finite(m.rot, -10, 10)) return;
+        if (!finite(m.x, movementBounds.x1, movementBounds.x2) || !finite(m.z, movementBounds.z1, movementBounds.z2) || !finite(m.rot, -10, 10)) return;
         // visitantes não entram na sala da equipe
         if (!member && inside(SALA, m.x, m.z)) return;
         Object.assign(p.presence, { x: m.x, z: m.z, rot: m.rot, seat: typeof m.seat === 'string' ? m.seat.slice(0, 32) : null });

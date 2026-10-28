@@ -149,3 +149,38 @@ test('visual confirmado pela API fica no SQLite e volta em uma nova conexão', a
   assert.equal(invalid.status, 400);
   assert.deepEqual(JSON.parse(db.prepare('SELECT look FROM users WHERE id = ?').get('test-user').look), look);
 });
+
+test('movimento alcança a terceira ilha e continua recusando posições fora da planta', async () => {
+  const sockets = [];
+  const connect = (actions = []) => new Promise((resolveState, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
+      origin: env.PUBLIC_URL, headers: { cookie: 'vt_sess=test-session' }, handshakeTimeout: 3000,
+    });
+    sockets.push(ws);
+    const timeout = setTimeout(() => { ws.terminate(); reject(new Error('Estado do movimento não recebido')); }, 3000);
+    ws.on('error', reject);
+    ws.on('message', (data) => {
+      const message = JSON.parse(String(data));
+      if (message.t === 'init' && actions.length) {
+        for (const action of actions) ws.send(JSON.stringify(action));
+        ws.send(JSON.stringify({ t: 'ping' }));
+      } else if (message.t === (actions.length ? 'pong' : 'init')) {
+        clearTimeout(timeout);
+        resolveState(message);
+      }
+    });
+  });
+  try {
+    await connect([
+      { t: 'move', x: 4.55, z: 13.3, rot: 0, seat: null },
+      { t: 'move', x: 4.55, z: 1e6, rot: 0, seat: null },
+      { t: 'move', x: -1e6, z: 13.3, rot: 0, seat: null },
+    ]);
+    const snapshot = await connect();
+    const person = snapshot.presence.find((p) => p.id === 'test-user');
+    assert.equal(person.x, 4.55);
+    assert.equal(person.z, 13.3);
+  } finally {
+    for (const ws of sockets) ws.close();
+  }
+});
