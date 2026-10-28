@@ -13,9 +13,10 @@ import { boardTex, gameTex, tvTex } from './live';
 
 const DESK_W = 1.8, DESK_D = 0.8, DESK_H = 0.38 * FS;
 const opposite: Record<Facing, Facing> = { n: 's', s: 'n', e: 'w', w: 'e' };
-// uma cor por mesa; as dez primeiras são as da ilha original e da antiga fileira
-const CHAIR_COLORS = ['#2f4f9a', '#9b3a36', '#2f6b52', '#b4692c', '#4a4f5a', '#5d4387', '#22708c', '#8c7330', '#7a3d5c', '#3f6f8f',
-  '#5f7a3a', '#a65e7a', '#2d5f6e', '#9a5b34', '#3b4a8c', '#7d6a4f', '#5a3e6b', '#2f7a5c'];
+// cinco cores sortidas pela sala, sem duas iguais lado a lado, frente a frente ou de costas no corredor
+const CHAIR = { laranja: '#b4692c', vermelho: '#9b3a36', azul: '#2f4f9a', roxo: '#5d4387', preto: '#4a4f5a' };
+const CHAIR_COLORS = (['roxo', 'preto', 'laranja', 'azul', 'preto', 'vermelho', 'azul', 'preto', 'roxo', 'azul', 'laranja', 'preto',
+  'vermelho', 'roxo', 'laranja', 'vermelho', 'roxo', 'azul'] as const).map((c) => CHAIR[c]);
 
 export interface DeskHandle { desk: Desk; seat: string; plate: THREE.Mesh; note: THREE.Mesh }
 

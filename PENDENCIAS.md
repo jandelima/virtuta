@@ -61,3 +61,4 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 # Rodada 7 — 29/10
 
 - [x] **Sala da equipe com o dobro do tamanho, para baixo, e três ilhas iguais à do meio** (18 mesas). A fileira de baixo sai; os armários ficam como estão.
+- [x] **Cadeiras sortidas** em cinco cores (laranja, vermelho, azul, roxo e preto), sem repetir cor entre vizinhas.
