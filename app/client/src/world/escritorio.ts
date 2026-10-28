@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { BOARD_GAP, DESKS, DOORS, HUB, REUNIAO, SALA, doorGeom, type Desk, type Door, type Rect, type SpaceId } from '../../../shared/layout';
 import { FACE, FS, MAT, Space, type Facing } from './space';
 import { carpet, concrete, drawn, planks, tiles } from './textures';
@@ -224,6 +225,26 @@ function portalDoor(sp: Space, d: Door, label: string, h: number) {
   return { light, lightMat };
 }
 
+/** Ar-condicionado split na parede, no alto: corpo branco arredondado, aleta embaixo e o visor. */
+function airConditioner(sp: Space, x: number, y: number, z: number, rot: number) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new RoundedBoxGeometry(0.92, 0.3, 0.22, 3, 0.05), new THREE.MeshStandardMaterial({ color: '#f3f3f0', roughness: 0.45 }));
+  body.castShadow = true;
+  body.receiveShadow = true;
+  const flap = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.045, 0.02), new THREE.MeshStandardMaterial({ color: '#dcdcd8', roughness: 0.5 }));
+  flap.position.set(0, -0.1, 0.105);
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.02, 0.01), new THREE.MeshStandardMaterial({ color: '#3a3d43', roughness: 0.8 }));
+  slot.position.set(0, -0.135, 0.1);
+  const led = new THREE.Mesh(new THREE.CircleGeometry(0.008, 12), new THREE.MeshStandardMaterial({ color: '#7fd1ff', emissive: '#7fd1ff', emissiveIntensity: 0.8 }));
+  led.position.set(0.34, 0.06, 0.111);
+  g.add(body, flap, slot, led);
+  // na escala dos móveis do kit, que são maiores que os de verdade
+  g.scale.setScalar(1.25);
+  g.position.set(x, y, z);
+  g.rotation.y = rot;
+  sp.group.add(g);
+}
+
 function doorSignTex(label: string) {
   return drawn(500, 100, (c) => {
     c.fillStyle = '#20242c'; c.fillRect(0, 0, 500, 100);
@@ -251,6 +272,9 @@ function buildSala(boards: Map<string, THREE.MeshStandardMaterial>) {
   // paredes externas inteiras no fundo e à esquerda; o fundo segue pelo corredor
   sp.wall(0, 0, SALA.x2 + 1.2, 0, { h: 2.4 });
   sp.wall(0, 0, 0, SALA.z2 + 1.2, { h: 2.4, windows: [[1.8, 5.0], [9.6, 12.8]] });
+
+  // ar-condicionado logo depois de cada janela da parede esquerda, com uma folga
+  for (const zEnd of [5.0, 12.8]) airConditioner(sp, 0.21, 1.98, zEnd + 0.3 + 0.58, Math.PI / 2);
 
   const salaCabinets = Array.from({ length: 6 }, (_, i) => {
     const z0 = 2.0, len = (6.6 - z0) / 6;

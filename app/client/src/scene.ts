@@ -1,16 +1,26 @@
 import * as THREE from 'three';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { MAT, type Space } from './world/space';
+import { HUB, type Rect } from '../../shared/layout';
 import type { Avatar } from './avatar';
 
-// Renderização do ambiente atual: câmera isométrica que o enquadra inteiro, luz, tema, anéis das
-// conversas e laço de quadros.
+// Renderização do ambiente atual: câmera isométrica que acompanha a pessoa sem sair do ambiente,
+// luz, tema, anéis das conversas e laço de quadros.
 // Pensado para pesar pouco: sombra do cenário calculada uma vez, resolução limitada e quadros
 // espaçados quando nada se mexe.
 
 export type Theme = 'day' | 'night';
 const VIEW_DIR = new THREE.Vector3(1, 1.15, 1).normalize();
 const BASE_VIEW = 12;
+// eixos da tela no mundo (a câmera nunca gira)
+const VIEW_AXES = (() => {
+  const ref = new THREE.Object3D();
+  ref.position.copy(VIEW_DIR);
+  ref.lookAt(0, 0, 0);
+  return { right: new THREE.Vector3(1, 0, 0).applyQuaternion(ref.quaternion), up: new THREE.Vector3(0, 1, 0).applyQuaternion(ref.quaternion) };
+})();
+/** Quanto do lado de fora das paredes (corredor, gramado) a câmera pode mostrar, em metros. */
+const VIEW_PAD = 0.6;
 // parado, o boneco ainda respira: 30 quadros mantêm a animação suave e custam metade
 const IDLE_FPS = 30;
 // com a janela em segundo plano (ou uma janela do app por cima), o escritório segue vivo, mas leve
@@ -33,8 +43,6 @@ export class Scene3D {
   private rings: THREE.Group[] = [];
   private clickMarker: THREE.Mesh;
   private camTarget = new THREE.Vector3();
-  /** Zoom em que o ambiente inteiro cabe na tela. */
-  private frameZoom = 1;
   /** Cena reduzida a uma faixa ao lado do quadro ou da apresentação: segue a pessoa, sem enquadrar a sala. */
   private side = false;
   private zoomBeforeSide = 1.15;
@@ -54,7 +62,7 @@ export class Scene3D {
   space!: Space;
   theme: Theme = 'day';
   zoom = 1.15;
-  /** Pessoa (ou ponto) que a câmera acompanha na faixa ao lado do quadro. */
+  /** Pessoa que a câmera acompanha. */
   follow: () => THREE.Vector3 = () => this.camTarget;
   onFrame: (dt: number) => void = () => {};
   onTheme: () => void = () => {};
@@ -105,8 +113,8 @@ export class Scene3D {
     const c = this.sun.shadow.camera;
     c.left = -s; c.right = s; c.top = s; c.bottom = -s; c.near = 1; c.far = 80;
     c.updateProjectionMatrix();
-    if (!this.side) this.zoom = this.roomZoom();
-    this.camTarget.copy(this.side ? this.follow() : new THREE.Vector3(cx, 0, cz));
+    if (!this.side) this.zoom = this.baseZoom();
+    this.camTarget.copy(this.viewTarget());
     this.camera.zoom = this.zoom;
     this.applyTheme(this.theme);
   }
@@ -115,12 +123,20 @@ export class Scene3D {
     if (on === this.side) return;
     this.side = on;
     if (on) { this.zoomBeforeSide = this.zoom; this.zoom = 1.25; }
-    else this.zoom = this.space ? this.roomZoom() : this.zoomBeforeSide;
+    else this.zoom = this.space ? this.baseZoom() : this.zoomBeforeSide;
     this.wake();
   }
 
-  /** Volta a enquadrar o ambiente inteiro (depois de o zoom ter sido mudado à mão). */
-  reframe() { if (this.space && !this.side) { this.zoom = this.roomZoom(); this.wake(); } }
+  /** Volta ao zoom de sempre (depois de o zoom ter sido mudado à mão). */
+  reframe() { if (this.space && !this.side) { this.zoom = this.baseZoom(); this.wake(); } }
+
+  /** Alterna entre o ambiente inteiro na tela e o zoom de sempre. */
+  toggleWhole() {
+    if (!this.space || this.side) return;
+    const whole = this.fitZoom(this.space.rect);
+    this.zoom = Math.abs(this.zoom - whole) < 0.01 ? this.baseZoom() : whole;
+    this.wake();
+  }
 
   wake(ms = 2500) { this.activeUntil = performance.now() + ms; }
   refreshShadows() { this.renderer.shadowMap.needsUpdate = true; this.wake(); }
@@ -246,23 +262,45 @@ export class Scene3D {
     return g;
   }
 
-  /** Zoom que faz o ambiente (com paredes) caber na área visível, com uma margem. */
-  private roomZoom() {
-    const z = this.space.rect;
-    // orientação final da câmera (no primeiro quadro ela ainda não foi posicionada)
-    const ref = new THREE.Object3D();
-    ref.position.copy(VIEW_DIR);
-    ref.lookAt(0, 0, 0);
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(ref.quaternion);
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(ref.quaternion);
+  /** Extensão de um retângulo do chão (com paredes de 2,4 m) nos eixos da tela. */
+  private extent(r: Rect, pad = 0) {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const x of [z.x1, z.x2]) for (const zz of [z.z1, z.z2]) for (const y of [0, 2.4]) {
-      const p = new THREE.Vector3(x, y, zz);
-      minX = Math.min(minX, p.dot(right)); maxX = Math.max(maxX, p.dot(right));
-      minY = Math.min(minY, p.dot(up)); maxY = Math.max(maxY, p.dot(up));
+    for (const x of [r.x1 - pad, r.x2 + pad]) for (const z of [r.z1 - pad, r.z2 + pad]) for (const y of [0, 2.4]) {
+      const p = new THREE.Vector3(x, y, z);
+      minX = Math.min(minX, p.dot(VIEW_AXES.right)); maxX = Math.max(maxX, p.dot(VIEW_AXES.right));
+      minY = Math.min(minY, p.dot(VIEW_AXES.up)); maxY = Math.max(maxY, p.dot(VIEW_AXES.up));
     }
-    const aspect = this.viewport.clientWidth / Math.max(1, this.viewport.clientHeight);
-    return this.frameZoom = THREE.MathUtils.clamp(Math.min((BASE_VIEW * aspect) / (maxX - minX), BASE_VIEW / (maxY - minY)) * 0.88, 0.5, 2.4);
+    return { minX, maxX, minY, maxY };
+  }
+
+  private get aspect() { return this.viewport.clientWidth / Math.max(1, this.viewport.clientHeight); }
+
+  /** Zoom que faz o retângulo (com paredes) caber na área visível, com uma margem. */
+  private fitZoom(r: Rect) {
+    const e = this.extent(r);
+    return THREE.MathUtils.clamp(Math.min((BASE_VIEW * this.aspect) / (e.maxX - e.minX), BASE_VIEW / (e.maxY - e.minY)) * 0.88, 0.5, 2.4);
+  }
+
+  /**
+   * Zoom de sempre: o do hub inteiro. As pessoas têm o mesmo tamanho nos três ambientes, e na
+   * sala da equipe, maior, a câmera acompanha quem anda.
+   */
+  private baseZoom() { return this.fitZoom(HUB); }
+
+  /**
+   * Ponto do chão para onde a câmera olha: a pessoa, mas só até a vista encostar nas paredes,
+   * para não mostrar o lado de fora. Se o ambiente cabe inteiro, fica centralizado.
+   */
+  private viewTarget() {
+    const p = this.follow();
+    const e = this.extent(this.space.rect, VIEW_PAD);
+    const halfW = (BASE_VIEW * this.aspect) / 2 / this.zoom, halfH = BASE_VIEW / 2 / this.zoom;
+    const clamp = (v: number, lo: number, hi: number) => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)));
+    const sx = clamp(p.dot(VIEW_AXES.right), e.minX + halfW, e.maxX - halfW);
+    const sy = clamp(p.dot(VIEW_AXES.up), e.minY + halfH, e.maxY - halfH);
+    // de volta ao chão: deslizar na direção da câmera não muda o ponto na tela
+    const t = -(sx * VIEW_AXES.right.y + sy * VIEW_AXES.up.y) / VIEW_DIR.y;
+    return VIEW_AXES.right.clone().multiplyScalar(sx).addScaledVector(VIEW_AXES.up, sy).addScaledVector(VIEW_DIR, t);
   }
 
   start() {
@@ -277,15 +315,11 @@ export class Scene3D {
     this.lastFrame = t;
     this.onFrame(dt);
 
-    // o ambiente inteiro fica enquadrado; com zoom de perto (ou na faixa ao lado do quadro),
-    // a câmera segue a pessoa, sem sair do ambiente
-    const r = this.space.rect;
-    const close = this.side || this.zoom > this.frameZoom * 1.15;
-    const target = close ? this.follow() : new THREE.Vector3((r.x1 + r.x2) / 2, 0, (r.z1 + r.z2) / 2);
+    // a câmera acompanha a pessoa aos poucos, sem mostrar o lado de fora do ambiente
+    const target = this.viewTarget();
     const k = 1 - Math.exp(-dt * 4);
     const before = this.camTarget.clone();
-    this.camTarget.x += (THREE.MathUtils.clamp(target.x, r.x1, r.x2) - this.camTarget.x) * k;
-    this.camTarget.z += (THREE.MathUtils.clamp(target.z, r.z1, r.z2) - this.camTarget.z) * k;
+    this.camTarget.lerp(target, k);
     this.camera.position.copy(this.camTarget).addScaledVector(VIEW_DIR, 60);
     this.camera.lookAt(this.camTarget);
     const zoomBefore = this.camera.zoom;

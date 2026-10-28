@@ -41,10 +41,10 @@ export class Shell {
       const a = AREAS.find((x) => x.id === b?.dataset.area);
       if (a) app.goToArea(a.id);
     });
-    $('zoom').innerHTML = `<button id="zIn" aria-label="Aproximar">${icon('plus')}</button><button id="zOut" aria-label="Afastar">${icon('minus')}</button><button id="zMe" aria-label="Ver o ambiente inteiro">${icon('locate')}</button>`;
+    $('zoom').innerHTML = `<button id="zIn" aria-label="Aproximar">${icon('plus')}</button><button id="zOut" aria-label="Afastar">${icon('minus')}</button><button id="zMe" aria-label="Ver o ambiente inteiro" title="Ver o ambiente inteiro">${icon('locate')}</button>`;
     $('zIn').onclick = () => (app.sc.zoom = Math.min(2.4, app.sc.zoom * 1.25));
     $('zOut').onclick = () => (app.sc.zoom = Math.max(0.5, app.sc.zoom / 1.25));
-    $('zMe').onclick = () => { app.followId = null; app.sc.reframe(); };
+    $('zMe').onclick = () => { app.followId = null; app.sc.toggleWhole(); };
     $('hint').innerHTML = `<span><kbd>WASD</kbd> andar</span><span><kbd>E</kbd> usar</span><span><kbd>M</kbd> mic</span><span><kbd>V</kbd> câmera</span><span><kbd>Alt</kbd> nomes</span>`;
     $('searchIcon').innerHTML = icon('search');
   }

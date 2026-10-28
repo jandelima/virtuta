@@ -33,7 +33,9 @@ O tratamento de sessões abertas em múltiplas abas, computadores suspensos e de
 
 ## 3. Organização do escritório
 
-Definido em 28/10: o escritório tem três ambientes, cada um uma cena própria. Quem está num ambiente vê só ele, enquadrado inteiro, e só vê e conversa com quem está ali.
+Definido em 28/10: o escritório tem três ambientes, cada um uma cena própria. Quem está num ambiente vê só ele e só vê e conversa com quem está ali.
+
+Câmera (29/10): as pessoas têm o mesmo tamanho nos três ambientes (o zoom em que o hub cabe inteiro). Na sala da equipe, maior, a câmera acompanha a pessoa aos poucos e para nas paredes, sem mostrar o lado de fora; de qualquer ilha se vê a maior parte das cadeiras. O botão abaixo do zoom alterna para o ambiente inteiro.
 
 | Ambiente | Função |
 | --- | --- |
@@ -45,7 +47,7 @@ Definido em 28/10: o escritório tem três ambientes, cada um uma cena própria.
 - A porta da sala da equipe fica sempre aberta. A da reunião pode ser fechada por quem está dentro; vista do hub, uma luz sobre ela fica verde (aberta) ou vermelha (fechada), e quem chega bate.
 - Ir a outro ambiente pela lista de lugares, pela lista de pessoas ou pelos atalhos (café, voltar à mesa) leva a pessoa pelas portas sozinha.
 - Saíram em 28/10: o lounge, a recepção com balcão e espera, a área de lazer com pufes e o minimapa.
-- A sala da equipe tem o dobro da profundidade original (29/10): três ilhas iguais, uma abaixo da outra, cada uma com 3 mesas de cada lado (18 mesas). A fileira de 3 mesas junto ao vidro saiu; os armários com a rádio continuam no alto da parede direita.
+- A sala da equipe tem o dobro da profundidade original (29/10): três ilhas iguais, uma abaixo da outra, cada uma com 3 mesas de cada lado (18 mesas). A fileira de 3 mesas junto ao vidro saiu; os armários com a rádio continuam no alto da parede direita. Dois ar-condicionados ficam na parede esquerda, logo depois de cada janela.
 
 Os quadros ficam na sala da equipe e na sala de reunião.
 

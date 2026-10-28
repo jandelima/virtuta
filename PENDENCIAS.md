@@ -62,3 +62,5 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 
 - [x] **Sala da equipe com o dobro do tamanho, para baixo, e três ilhas iguais à do meio** (18 mesas). A fileira de baixo sai; os armários ficam como estão.
 - [x] **Cadeiras sortidas** em cinco cores (laranja, vermelho, azul, roxo e preto), sem repetir cor entre vizinhas.
+- [x] **Câmera mais perto, acompanhando a pessoa**: mesmo tamanho de gente nos três ambientes; na sala, a vista segue quem anda e para nas paredes; o botão abaixo do zoom mostra a sala inteira.
+- [x] **Dois ar-condicionados** na parede esquerda da sala, logo depois de cada janela, com uma folga.
