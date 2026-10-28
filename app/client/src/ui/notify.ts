@@ -105,10 +105,10 @@ export class Notifier {
   }
 
   pauseInvite(from: string) {
-    this.toast(`${this.app.name(from)} convidou para uma pausa no lounge`, {
+    this.toast(`${this.app.name(from)} convidou para uma pausa no café`, {
       who: from, important: true,
       actions: [
-        { label: 'Ir até lá', primary: true, run: () => this.app.goLounge() },
+        { label: 'Ir até lá', primary: true, run: () => this.app.goPause() },
         { label: 'Agora não', run: () => {} },
       ],
     });
@@ -116,7 +116,7 @@ export class Notifier {
 
   guestArrived(guest: string, name: string) {
     const app = this.app;
-    this.toast(`${name} chegou à recepção e pediu para entrar`, {
+    this.toast(`${name} chegou ao hub e pediu para entrar`, {
       important: true, key: `guest-${guest}`, sticky: true,
       actions: [
         { label: 'Admitir', primary: true, run: () => app.send({ t: 'admit', guest, accept: true }) },
@@ -137,7 +137,7 @@ export class Notifier {
       if (!b || this.lastBlock === key) return;
       this.lastBlock = key;
       if (b.kind === 'pausa') {
-        this.toast(`Fim do bloco de foco. Pausa compartilhada de ${b.minutes} min.`, { important: true, actions: [{ label: 'Pausa no lounge', primary: true, run: () => app.goLounge() }, { label: 'Ficar aqui', run: () => {} }] });
+        this.toast(`Fim do bloco de foco. Pausa compartilhada de ${b.minutes} min.`, { important: true, actions: [{ label: 'Pausa no café', primary: true, run: () => app.goPause() }, { label: 'Ficar aqui', run: () => {} }] });
       } else this.toast(`Novo bloco de foco: ${b.minutes} min.`, { important: true });
     } else this.lastBlock = `${next.id}:0`;
   }

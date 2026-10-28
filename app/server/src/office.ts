@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import { DESKS, ENTRY, PROX, REUNIAO, SALA, areaAt, inside } from '../../shared/layout';
+import { DESKS, ENTRY, GUEST_ENTRY, PROX, REUNIAO, SALA, areaAt, inside } from '../../shared/layout';
 import { sanitizeLook } from '../../shared/look';
 import type { BoardElement, ClientMsg, Conv, FocusBlock, FocusSession, GameState, Presence, PublicUser, RadioItem, RadioState, ServerMsg, Status } from '../../shared/protocol';
 import { boards, guests, invites, notes, settings, users } from './db';
@@ -27,7 +27,8 @@ const send = (ws: WebSocket | null, m: ServerMsg) => {
 const finite = (n: unknown, lo: number, hi: number) => typeof n === 'number' && Number.isFinite(n) && n >= lo && n <= hi;
 const clean = (s: unknown, max: number) => (typeof s === 'string' ? s.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 const dist = (a: Presence, b: Presence) => Math.hypot(a.x - b.x, a.z - b.z);
-const acoustic = (p: Presence) => areaAt(p.x, p.z)?.acoustic ?? 'salao';
+// ambientes diferentes nunca formam conversa juntos
+const acoustic = (p: Presence) => areaAt(p.x, p.z)?.id ?? '';
 const emptyGame = (): GameState => ({ id: randomId(4), board: Array(9).fill(''), players: [null, null], turn: 0, winner: null, draw: false });
 
 export class Office {
@@ -83,7 +84,7 @@ export class Office {
       if (!user) { ws.close(4003, 'forbidden'); return; }
       // integrantes chegam sentados na própria mesa; visitantes, na recepção
       const desk = DESKS.find((d) => d.index === user.desk);
-      const start = who.guest ? { x: ENTRY.x + 0.6, z: ENTRY.z - 0.4 } : desk ? { x: desk.x, z: desk.z + (desk.side === 'n' ? -0.72 : 0.72) } : ENTRY;
+      const start = who.guest ? GUEST_ENTRY : desk ? { x: desk.x, z: desk.z + (desk.side === 'n' ? -0.72 : 0.72) } : ENTRY;
       const seat = !who.guest && desk ? `mesa-${desk.index}` : null;
       p = {
         user,
@@ -198,7 +199,7 @@ export class Office {
     switch (m.t) {
       case 'ping': return send(p.ws, { t: 'pong', serverTime: Date.now() });
       case 'move': {
-        if (!finite(m.x, -1, 30) || !finite(m.z, -1, 20) || !finite(m.rot, -10, 10)) return;
+        if (!finite(m.x, -2, 52) || !finite(m.z, -2, 12) || !finite(m.rot, -10, 10)) return;
         // visitantes não entram na sala da equipe
         if (!member && inside(SALA, m.x, m.z)) return;
         Object.assign(p.presence, { x: m.x, z: m.z, rot: m.rot, seat: typeof m.seat === 'string' ? m.seat.slice(0, 32) : null });

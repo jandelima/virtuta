@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { MAT, type Space, type Zone } from './world/space';
-import { enableRoomFocus, focusedRoom, setFocusColors, setFocusRoom, setFocusStyle, updateRoomFocus } from './world/roomFocus';
+import { MAT, type Space } from './world/space';
 import type { Avatar } from './avatar';
 
-// Renderização do escritório: câmera isométrica, luz, tema, anéis das conversas e laço de quadros.
+// Renderização do ambiente atual: câmera isométrica que o enquadra inteiro, luz, tema, anéis das
+// conversas e laço de quadros.
 // Pensado para pesar pouco: sombra do cenário calculada uma vez, resolução limitada e quadros
 // espaçados quando nada se mexe.
 
@@ -33,7 +33,8 @@ export class Scene3D {
   private rings: THREE.Group[] = [];
   private clickMarker: THREE.Mesh;
   private camTarget = new THREE.Vector3();
-  private framed: Zone | null = null;
+  /** Zoom em que o ambiente inteiro cabe na tela. */
+  private frameZoom = 1;
   /** Cena reduzida a uma faixa ao lado do quadro ou da apresentação: segue a pessoa, sem enquadrar a sala. */
   private side = false;
   private zoomBeforeSide = 1.15;
@@ -53,12 +54,10 @@ export class Scene3D {
   space!: Space;
   theme: Theme = 'day';
   zoom = 1.15;
-  /** Pessoa (ou ponto) que a câmera acompanha. */
+  /** Pessoa (ou ponto) que a câmera acompanha na faixa ao lado do quadro. */
   follow: () => THREE.Vector3 = () => this.camTarget;
   onFrame: (dt: number) => void = () => {};
   onTheme: () => void = () => {};
-  /** A sala onde a pessoa está mudou (null no salão). */
-  onRoom: (room: Zone | null) => void = () => {};
 
   constructor(readonly viewport: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -87,25 +86,28 @@ export class Scene3D {
     this.clickMarker.rotation.x = -Math.PI / 2;
     this.clickMarker.position.y = 0.025;
     this.scene.add(this.clickMarker);
-    // "luz apagada" fora da sala: o escurecimento vem antes do mapeamento de tons, por isso é forte aqui
-    setFocusStyle({ desat: 0.35, dark: 0.68, fade: 0 });
 
     new ResizeObserver(() => this.resize()).observe(viewport);
     // qualquer interação acelera os quadros por alguns segundos
     for (const ev of ['pointermove', 'pointerdown', 'wheel', 'keydown']) addEventListener(ev, () => this.wake(), { passive: true });
   }
 
+  /** Mostra só este ambiente; a câmera vai direto para ele, sem atravessar o caminho. */
   setSpace(sp: Space) {
+    if (this.space === sp) return;
+    if (this.space) this.scene.remove(this.space.group);
     this.space = sp;
     this.scene.add(sp.group);
-    enableRoomFocus(sp.group);
-    const cx = sp.w / 2, cz = sp.d / 2;
+    const r = sp.rect, cx = (r.x1 + r.x2) / 2, cz = (r.z1 + r.z2) / 2;
     this.sun.position.set(cx - 14, 26, cz - 10);
     this.sun.target.position.set(cx, 0, cz);
-    const s = Math.max(sp.w, sp.d) * 0.72;
+    const s = Math.max(r.x2 - r.x1, r.z2 - r.z1) * 0.72 + 1;
     const c = this.sun.shadow.camera;
     c.left = -s; c.right = s; c.top = s; c.bottom = -s; c.near = 1; c.far = 80;
     c.updateProjectionMatrix();
+    if (!this.side) this.zoom = this.roomZoom();
+    this.camTarget.copy(this.side ? this.follow() : new THREE.Vector3(cx, 0, cz));
+    this.camera.zoom = this.zoom;
     this.applyTheme(this.theme);
   }
 
@@ -113,9 +115,12 @@ export class Scene3D {
     if (on === this.side) return;
     this.side = on;
     if (on) { this.zoomBeforeSide = this.zoom; this.zoom = 1.25; }
-    else this.zoom = this.framed ? this.roomZoom(this.framed) : this.zoomBeforeSide;
+    else this.zoom = this.space ? this.roomZoom() : this.zoomBeforeSide;
     this.wake();
   }
+
+  /** Volta a enquadrar o ambiente inteiro (depois de o zoom ter sido mudado à mão). */
+  reframe() { if (this.space && !this.side) { this.zoom = this.roomZoom(); this.wake(); } }
 
   wake(ms = 2500) { this.activeUntil = performance.now() + ms; }
   refreshShadows() { this.renderer.shadowMap.needsUpdate = true; this.wake(); }
@@ -134,6 +139,8 @@ export class Scene3D {
     const a = w / Math.max(1, h);
     Object.assign(this.camera, { left: (-BASE_VIEW * a) / 2, right: (BASE_VIEW * a) / 2, top: BASE_VIEW / 2, bottom: -BASE_VIEW / 2 });
     this.camera.updateProjectionMatrix();
+    // a janela mudou de tamanho: o ambiente volta a caber inteiro
+    this.reframe();
     this.wake();
   }
 
@@ -161,7 +168,6 @@ export class Scene3D {
       for (const m of this.space.glowMats) m.emissiveIntensity = night ? 1.0 : 0.5;
     }
     const acc = this.accent();
-    setFocusColors(this.scene.background as THREE.Color);
     for (const r of this.rings) r.children.forEach((c) => ((c as THREE.Mesh).material as THREE.MeshBasicMaterial).color.set(acc));
     (this.clickMarker.material as THREE.MeshBasicMaterial).color.set(acc);
     this.onTheme();
@@ -240,8 +246,9 @@ export class Scene3D {
     return g;
   }
 
-  /** Zoom que faz a sala (com paredes) caber na área visível, com uma margem. */
-  private roomZoom(z: Zone) {
+  /** Zoom que faz o ambiente (com paredes) caber na área visível, com uma margem. */
+  private roomZoom() {
+    const z = this.space.rect;
     // orientação final da câmera (no primeiro quadro ela ainda não foi posicionada)
     const ref = new THREE.Object3D();
     ref.position.copy(VIEW_DIR);
@@ -255,12 +262,13 @@ export class Scene3D {
       minY = Math.min(minY, p.dot(up)); maxY = Math.max(maxY, p.dot(up));
     }
     const aspect = this.viewport.clientWidth / Math.max(1, this.viewport.clientHeight);
-    return THREE.MathUtils.clamp(Math.min((BASE_VIEW * aspect) / (maxX - minX), BASE_VIEW / (maxY - minY)) * 0.88, 0.5, 2.4);
+    return this.frameZoom = THREE.MathUtils.clamp(Math.min((BASE_VIEW * aspect) / (maxX - minX), BASE_VIEW / (maxY - minY)) * 0.88, 0.5, 2.4);
   }
 
   start() {
     this.resize();
-    this.camTarget.copy(this.follow());
+    this.reframe();
+    this.camera.zoom = this.zoom;
     this.renderer.setAnimationLoop((t) => this.frame(t));
   }
 
@@ -269,22 +277,15 @@ export class Scene3D {
     this.lastFrame = t;
     this.onFrame(dt);
 
-    // destaque da sala atual e enquadramento ao entrar numa sala
-    const focus = this.follow();
-    setFocusRoom(this.space, focus.x, focus.z);
-    updateRoomFocus(dt);
-    const room = focusedRoom();
-    if (room !== this.framed) {
-      this.framed = room;
-      this.onRoom(room);
-      if (room && !this.side) this.zoom = this.roomZoom(room);
-      this.wake();
-    }
-    const target = room && !this.side ? new THREE.Vector3((room.x1 + room.x2) / 2, 0, (room.z1 + room.z2) / 2) : focus;
+    // o ambiente inteiro fica enquadrado; com zoom de perto (ou na faixa ao lado do quadro),
+    // a câmera segue a pessoa, sem sair do ambiente
+    const r = this.space.rect;
+    const close = this.side || this.zoom > this.frameZoom * 1.15;
+    const target = close ? this.follow() : new THREE.Vector3((r.x1 + r.x2) / 2, 0, (r.z1 + r.z2) / 2);
     const k = 1 - Math.exp(-dt * 4);
     const before = this.camTarget.clone();
-    this.camTarget.x += (THREE.MathUtils.clamp(target.x, 2, this.space.w - 2) - this.camTarget.x) * k;
-    this.camTarget.z += (THREE.MathUtils.clamp(target.z, 2, this.space.d - 2) - this.camTarget.z) * k;
+    this.camTarget.x += (THREE.MathUtils.clamp(target.x, r.x1, r.x2) - this.camTarget.x) * k;
+    this.camTarget.z += (THREE.MathUtils.clamp(target.z, r.z1, r.z2) - this.camTarget.z) * k;
     this.camera.position.copy(this.camTarget).addScaledVector(VIEW_DIR, 60);
     this.camera.lookAt(this.camTarget);
     const zoomBefore = this.camera.zoom;

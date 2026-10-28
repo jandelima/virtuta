@@ -36,21 +36,6 @@ export function pingPong(sp: Space, x: number, z: number) {
   sp.nav.block(x - w / 2 - 0.25, z - d / 2 - 0.25, x + w / 2 + 0.25, z + d / 2 + 0.25);
 }
 
-export function beanbag(sp: Space, x: number, z: number, color: string, r = 0.42) {
-  const g = new THREE.Group();
-  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 28, 18), std(color, { roughness: 0.95 }));
-  m.scale.set(1, 0.58, 1);
-  m.position.set(x, r * 0.5, z);
-  m.castShadow = m.receiveShadow = true;
-  const dent = new THREE.Mesh(new THREE.SphereGeometry(r * 0.62, 20, 12), std(color, { roughness: 0.95 }));
-  dent.scale.set(1, 0.5, 1);
-  dent.position.set(x, r * 0.8, z);
-  g.add(m, dent);
-  sp.group.add(g);
-  sp.nav.block(x - r - 0.15, z - r - 0.15, x + r + 0.15, z + r + 0.15);
-  return g;
-}
-
 /** Painel plano com textura, preso a uma parede ou num cavalete. */
 export function panel(sp: Space, x: number, y: number, z: number, w: number, h: number, rot: number, tex: THREE.Texture, opts: { glow?: boolean; frame?: string; depth?: number } = {}) {
   const g = new THREE.Group();

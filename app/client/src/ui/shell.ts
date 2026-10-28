@@ -1,14 +1,13 @@
 import type { OfficeApp } from '../app';
 import { AREAS, areaAt } from '../../../shared/layout';
 import { STATUS_COLOR, STATUS_LABEL } from '../people';
-import { drawMinimap, minimapToWorld } from './minimap';
 import { icon } from './icons';
 import { esc } from './dom';
 import { openAvatarEditor } from './avatarEditor';
 import { resolveLook } from '../look';
 import { api } from '../api';
 
-// Moldura do escritório: topo, lateral (áreas e pessoas), dock, minimapa e telas de estado.
+// Moldura do escritório: topo, lateral (ambientes e pessoas), dock e telas de estado.
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -32,7 +31,7 @@ export class Shell {
       if (!row) return;
       const id = row.dataset.id!;
       if (id === app.me || !app.presence.has(id)) return;
-      // centraliza o mapa na pessoa e abre as ações rápidas
+      // aproxima a câmera da pessoa (se estiver no mesmo ambiente) e abre as ações rápidas
       app.followId = id;
       app.followUntil = performance.now() + 4000;
       app.panels.openPerson(id);
@@ -40,18 +39,12 @@ export class Shell {
     $('spaces').addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-area]');
       const a = AREAS.find((x) => x.id === b?.dataset.area);
-      if (a) app.walkTo((a.x1 + a.x2) / 2, (a.z1 + a.z2) / 2 + (a.id === 'reuniao' ? 1.2 : 0));
+      if (a) app.goToArea(a.id);
     });
-    const mini = $<HTMLCanvasElement>('minimap');
-    mini.addEventListener('click', (e) => {
-      const r = mini.getBoundingClientRect();
-      const p = minimapToWorld(app.world.space, mini, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
-      if (p) app.walkTo(p.x, p.y);
-    });
-    $('zoom').innerHTML = `<button id="zIn" aria-label="Aproximar">${icon('plus')}</button><button id="zOut" aria-label="Afastar">${icon('minus')}</button><button id="zMe" aria-label="Centralizar em mim">${icon('locate')}</button>`;
+    $('zoom').innerHTML = `<button id="zIn" aria-label="Aproximar">${icon('plus')}</button><button id="zOut" aria-label="Afastar">${icon('minus')}</button><button id="zMe" aria-label="Ver o ambiente inteiro">${icon('locate')}</button>`;
     $('zIn').onclick = () => (app.sc.zoom = Math.min(2.4, app.sc.zoom * 1.25));
     $('zOut').onclick = () => (app.sc.zoom = Math.max(0.5, app.sc.zoom / 1.25));
-    $('zMe').onclick = () => { app.followId = null; };
+    $('zMe').onclick = () => { app.followId = null; app.sc.reframe(); };
     $('hint').innerHTML = `<span><kbd>WASD</kbd> andar</span><span><kbd>E</kbd> usar</span><span><kbd>M</kbd> mic</span><span><kbd>V</kbd> câmera</span><span><kbd>Alt</kbd> nomes</span>`;
     $('searchIcon').innerHTML = icon('search');
   }
@@ -74,7 +67,6 @@ export class Shell {
     this.renderAreas();
     const me = this.app.myPresence;
     $('crumb').textContent = me ? areaAt(me.x, me.z)?.name ?? '' : '';
-    drawMinimap($<HTMLCanvasElement>('minimap'), this.app.world.space, [...this.app.avatars.values()], this.app.myAvatar!, this.app.sc.accent(), this.app.sc.theme === 'night');
   }
 
   renderTop() {
@@ -155,7 +147,7 @@ export class Shell {
       if (a) counts.set(a.id, (counts.get(a.id) ?? 0) + 1);
     }
     const me = app.myPresence ? areaAt(app.myPresence.x, app.myPresence.z)?.id : '';
-    const html = AREAS.filter((a) => !app.guest || ['reuniao', 'recepcao', 'lazer', 'lounge'].includes(a.id)).map((a) => {
+    const html = AREAS.filter((a) => !app.guest || a.id !== 'sala').map((a) => {
       const n = counts.get(a.id) ?? 0;
       return `<button class="space-row${a.id === me ? ' on' : ''}" data-area="${a.id}" title="${esc(a.hint)}"><span class="sic">${icon(areaIcon[a.id] ?? 'building')}</span><b>${a.name}</b><small>${n || ''}</small></button>`;
     }).join('');
@@ -286,5 +278,5 @@ export class Shell {
 }
 
 const areaIcon: Record<string, string> = {
-  sala: 'users', reuniao: 'screen', recepcao: 'door', cafe: 'coffee', lounge: 'sofa', lazer: 'smile',
+  sala: 'users', hub: 'coffee', reuniao: 'screen',
 };

@@ -17,7 +17,6 @@ export interface Person {
   guest?: boolean;
   /** Conexão instável: o servidor aguarda a volta da pessoa. */
   unstable?: boolean;
-  space: 'terreo';
   look?: StoredLook | null;
 }
 

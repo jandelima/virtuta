@@ -1,5 +1,5 @@
 import type { OfficeApp } from '../app';
-import { REUNIAO, REUNIAO_DOOR, inside } from '../../../shared/layout';
+import { REUNIAO, inside } from '../../../shared/layout';
 import type { FocusBlock, Suggestion, SuggestionKind } from '../../../shared/protocol';
 import { STATUS_COLOR } from '../people';
 import { icon } from './icons';
@@ -8,7 +8,7 @@ import { api } from '../api';
 
 // Gaveta lateral com o painel de cada objeto ou função do escritório.
 
-type Kind = 'porta' | 'recepcao' | 'radio' | 'lounge' | 'jogo' | 'foco' | 'sugestoes' | 'pessoa' | 'mesa' | 'bilhetes' | 'outro';
+type Kind = 'porta' | 'recepcao' | 'radio' | 'cafe' | 'jogo' | 'foco' | 'sugestoes' | 'pessoa' | 'mesa' | 'bilhetes' | 'outro';
 
 const head = (ic: string, title: string, sub: string) =>
   `<div class="dh"><span class="dic">${icon(ic)}</span><div><b>${esc(title)}</b><small>${esc(sub)}</small></div><button class="iconbtn" data-close aria-label="Fechar">${icon('x')}</button></div>`;
@@ -64,7 +64,7 @@ export class Panels {
 
   open(kind: string) {
     const fn: Record<string, () => void> = {
-      porta: () => this.door(), recepcao: () => this.reception(), radio: () => this.radio(), lounge: () => this.lounge(),
+      porta: () => this.door(), recepcao: () => this.reception(), radio: () => this.radio(), cafe: () => this.cafe(),
       jogo: () => this.game(), foco: () => this.focus(), sugestoes: () => void this.suggestions(),
     };
     fn[kind]?.();
@@ -161,11 +161,12 @@ export class Panels {
     this.show(`${head(open ? 'unlock' : 'lock', 'Porta da sala de reunião', open ? 'Aberta: quem entra participa da chamada' : 'Fechada: para entrar, é preciso pedir')}
       <div class="db2">
         <p class="muted">${insideRoom ? 'Quem está dentro pode fechar a porta. Com ela fechada, quem chegar bate e alguém de dentro autoriza.' : open ? 'Entre para participar da chamada da sala.' : app.doorAllowed ? 'Sua entrada foi autorizada.' : 'A reunião está com a porta fechada.'}</p>
-        ${insideRoom ? `<button class="btn primary wide" id="doorToggle">${icon(open ? 'lock' : 'unlock')}${open ? 'Fechar a porta' : 'Abrir a porta'}</button>` : !open && !app.doorAllowed ? `<button class="btn primary wide" id="doorKnock">${icon('hand')}Bater na porta</button>` : `<button class="btn primary wide" id="doorIn">${icon('door')}Entrar</button>`}
+        ${insideRoom ? `<button class="btn primary wide" id="doorToggle">${icon(open ? 'lock' : 'unlock')}${open ? 'Fechar a porta' : 'Abrir a porta'}</button><button class="btn soft wide" id="doorOut">${icon('exit')}Sair para o hub</button>` : !open && !app.doorAllowed ? `<button class="btn primary wide" id="doorKnock">${icon('hand')}Bater na porta</button>` : `<button class="btn primary wide" id="doorIn">${icon('door')}Entrar</button>`}
       </div>`, (d) => {
       d.querySelector('#doorToggle')?.addEventListener('click', () => app.send({ t: 'door', open: !open }));
+      d.querySelector('#doorOut')?.addEventListener('click', () => { app.travel('hub'); this.close(); });
       d.querySelector('#doorKnock')?.addEventListener('click', () => { app.send({ t: 'doorKnock' }); app.notify.toast('Você bateu na porta. Aguarde a resposta de quem está na sala.'); this.close(); });
-      d.querySelector('#doorIn')?.addEventListener('click', () => { app.walkTo((REUNIAO_DOOR.x1 + REUNIAO_DOOR.x2) / 2, REUNIAO.z2 - 1.2); this.close(); });
+      d.querySelector('#doorIn')?.addEventListener('click', () => { app.travel('reuniao'); this.close(); });
     }, 'porta');
   }
 
@@ -176,9 +177,9 @@ export class Panels {
     this.show(`${head('door', 'Recepção', 'Visitantes com convite temporário')}
       <div class="db2">
         <h4>Aguardando entrada</h4>
-        <div class="list">${waiting.length ? waiting.map((p) => `<div class="li"><span class="lic">${icon('user')}</span><div><b>${esc(app.name(p.id))}</b><small>Na recepção</small></div><button class="btn soft" data-admit="${p.id}">Admitir</button><button class="btn soft" data-refuse="${p.id}">Recusar</button></div>`).join('') : '<p class="empty">Ninguém aguardando.</p>'}</div>
+        <div class="list">${waiting.length ? waiting.map((p) => `<div class="li"><span class="lic">${icon('user')}</span><div><b>${esc(app.name(p.id))}</b><small>Na entrada do hub</small></div><button class="btn soft" data-admit="${p.id}">Admitir</button><button class="btn soft" data-refuse="${p.id}">Recusar</button></div>`).join('') : '<p class="empty">Ninguém aguardando.</p>'}</div>
         <h4>Convidar visitante</h4>
-        <p class="muted">O visitante entra pelo link, chega à recepção e você é avisado para admitir. Ele só circula pelo salão e pela sala de reunião, e só usa o quadro da reunião.</p>
+        <p class="muted">O visitante entra pelo link, chega à entrada do hub e você é avisado para admitir. Ele só circula pelo hub e pela sala de reunião, e só usa o quadro da reunião.</p>
         <div class="form">
           <input id="gName" maxlength="40" placeholder="Nome do visitante"/>
           <select id="gHours"><option value="2">Vale por 2 horas</option><option value="8" selected>Vale por 8 horas</option><option value="24">Vale por 1 dia</option><option value="72">Vale por 3 dias</option></select>
@@ -223,21 +224,25 @@ export class Panels {
     }, 'radio');
   }
 
-  // ---------- lounge ----------
-  private lounge() {
+  // ---------- café ----------
+  private cafe() {
     const app = this.app;
     const free = [...app.presence.values()].filter((p) => p.id !== app.me && app.displayStatus(p.id) === 'disp' && !p.waiting).length;
-    this.show(`${head('coffee', 'Lounge', 'Pausa para conversar, sem ficar ausente')}
+    this.show(`${head('coffee', 'Café', 'Uma pausa com a equipe ou um tempo ausente')}
       <div class="db2">
-        <p class="muted">No lounge você continua disponível: quem chegar perto entra na conversa. Para se afastar de verdade, use “Fui tomar café”.</p>
-        <button class="btn primary wide" id="invitePause" ${app.guest ? 'disabled' : ''}>${icon('users')}Convidar a equipe para uma pausa</button>
-        <small class="muted">${free ? `${free} ${free === 1 ? 'pessoa disponível recebe' : 'pessoas disponíveis recebem'} o convite. Quem está em foco ou ausente não é incomodado.` : 'No momento não há ninguém disponível para receber o convite.'}</small>
-      </div>`, (d) => d.querySelector('#invitePause')?.addEventListener('click', () => {
-      app.send({ t: 'pauseInvite' });
-      app.notify.toast('Convite enviado. Sente-se no sofá enquanto o pessoal chega.');
-      app.goLounge();
-      this.close();
-    }), 'lounge');
+        <button class="btn primary wide" id="invitePause">${icon('users')}Convidar a equipe para uma pausa</button>
+        <small class="muted">${free ? `${free} ${free === 1 ? 'pessoa disponível recebe' : 'pessoas disponíveis recebem'} o convite. Na pausa você continua disponível: quem chegar perto entra na conversa.` : 'No momento não há ninguém disponível para receber o convite.'}</small>
+        <button class="btn soft wide" id="goAfk">${icon('coffee')}Fui tomar café (ficar ausente)</button>
+        <small class="muted">Ausente, ninguém entra em conversa com você até você voltar.</small>
+      </div>`, (d) => {
+      d.querySelector('#invitePause')!.addEventListener('click', () => {
+        app.send({ t: 'pauseInvite' });
+        app.notify.toast('Convite enviado. Sente-se enquanto o pessoal chega.');
+        app.goPause();
+        this.close();
+      });
+      d.querySelector('#goAfk')!.addEventListener('click', () => { app.goAfk(); this.close(); });
+    }, 'cafe');
   }
 
   // ---------- jogo da velha ----------

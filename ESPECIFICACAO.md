@@ -25,7 +25,7 @@ O estilo visual ainda não foi escolhido. Esta especificação não fixa a arqui
 - A interface mostra disponibilidade e localização dos integrantes presentes.
 - Os estados contemplados são disponível, em foco, em reunião e ausente temporariamente.
 - Uma mensagem curta pode complementar o estado, como “almoçando, volto às 14h”.
-- Uma lista compacta permite localizar colegas e centralizar o mapa em suas posições.
+- Uma lista compacta permite localizar colegas, mostra o ambiente onde cada um está e leva até eles, atravessando as portas.
 - Trocar de aba não deve, por si só, indicar ausência ou interromper uma conversa.
 - Perda de conexão e ausência escolhida devem ter indicações distintas.
 
@@ -33,16 +33,21 @@ O tratamento de sessões abertas em múltiplas abas, computadores suspensos e de
 
 ## 3. Organização do escritório
 
-| Espaço | Função |
-| --- | --- |
-| Mesas pessoais | Referência de cada integrante e local para trabalho e encontros espontâneos. |
-| Sala de reunião | Conversa compartilhada entre os ocupantes, isolada das pessoas de fora. |
-| Área de café / AFK | Representar que alguém se afastou fisicamente e está temporariamente indisponível. |
-| Lounge | Pausas sociais com pessoas presentes e disponíveis para conversar. |
-| Área de lazer | Jogos e atividades compartilhadas, com modalidades a definir. |
-| Recepção | Aguardar e receber visitantes autorizados. |
+Definido em 28/10: o escritório tem três ambientes, cada um uma cena própria. Quem está num ambiente vê só ele, enquadrado inteiro, e só vê e conversa com quem está ali.
 
-As atividades têm lugares próprios. Os quadros ficam na sala da equipe e na sala de reunião.
+| Ambiente | Função |
+| --- | --- |
+| Sala da equipe | Onde todos entram: mesas pessoais (trabalho e encontros espontâneos), quadro da sala e rádio. |
+| Hub | Café (pausa com a equipe ou ausência), mesa de jogos 1 contra 1 e caixa de sugestões. Visitantes chegam pela entrada do hub. |
+| Sala de reunião | Conversa compartilhada entre os ocupantes, isolada das pessoas de fora. |
+
+- Portas ligam a sala da equipe ao hub e o hub à sala de reunião. Atravessar uma porta escurece a tela por um instante e a pessoa aparece logo depois da porta do outro lado.
+- A porta da sala da equipe fica sempre aberta. A da reunião pode ser fechada por quem está dentro; vista do hub, uma luz sobre ela fica verde (aberta) ou vermelha (fechada), e quem chega bate.
+- Ir a outro ambiente pela lista de lugares, pela lista de pessoas ou pelos atalhos (café, voltar à mesa) leva a pessoa pelas portas sozinha.
+- Saíram em 28/10: o lounge, a recepção com balcão e espera, a área de lazer com pufes e o minimapa.
+- A sala da equipe continua com a mesma disposição; o Jan vai alterá-la depois.
+
+Os quadros ficam na sala da equipe e na sala de reunião.
 
 A interação acontece no próprio objeto: ao passar o mouse, ele ganha destaque e uma dica do que o clique faz. Clicar leva a pessoa até o objeto e o usa (sentar numa cadeira, abrir um quadro, bater na porta).
 
@@ -91,9 +96,9 @@ Quem pode autorizar entradas, o destino de uma apresentação ao deixar a chamad
 
 - A pessoa pode ativar foco individual na própria mesa.
 - Foco protege de conexões automáticas e mantém a disponibilidade claramente indicada.
-- A ação “Fui tomar café” posiciona o avatar na área AFK e suspende sua participação em conversas.
+- A ação “Fui tomar café” leva o avatar até a máquina de café do hub e suspende sua participação em conversas.
 - A ação “Voltei” permite retornar à mesa.
-- O lounge representa uma pausa social e não ativa AFK.
+- A pausa no café do hub é social e não ativa AFK: a pessoa senta numa das mesinhas e continua disponível.
 - Aproximações e pedidos de atenção podem gerar avisos discretos, respeitando disponibilidade e preferências individuais.
 - Conversas em andamento continuam enquanto a página está em segundo plano.
 - O ambiente oferece notificações fora da página quando permitidas pelo navegador e habilitadas pela pessoa.
@@ -128,13 +133,13 @@ Formato de exportação, permissões, histórico de alterações e organização
 
 ## 9. Objetos úteis
 
-- Objetos do escritório abrem as ferramentas usadas pela equipe (quadros, rádio, recepção, jogo, caixa de sugestões).
+- Objetos do escritório abrem as ferramentas usadas pela equipe (quadros, rádio, café, jogo, caixa de sugestões, portas).
 - As mesas de projeto foram retiradas em 23/10: não se mostraram úteis para a equipe.
 - O jardim do foco coletivo saiu em 23/10 para dar lugar à caixa de sugestões. O foco coletivo continua, pelo botão do topo.
 
 ### Caixa de sugestões
 
-- Um púlpito no lounge, encostado na parede atrás do sofá, com a caixa e uma placa acima.
+- Um púlpito no hub, encostado na parede do fundo, com a caixa e uma placa acima.
 - Integrantes deixam um bilhete do tipo ideia, melhoria ou problema. Visitantes não usam a caixa.
 - Quem escreveu acompanha os próprios bilhetes e vê quando foram marcados como feitos ou descartados.
 - A administração recebe um aviso quando chega um bilhete novo e acompanha tudo na aba Sugestões: marca como feita, descarta, reabre e copia as abertas em texto para tratar depois.
@@ -167,9 +172,9 @@ Permanecem abertos o controle da fila, as permissões para trocar vídeos, o com
 ## 12. Convivência e lazer
 
 - Reações rápidas e acenos permitem pequenas interações sociais.
-- Uma pessoa pode convidar colegas para uma pausa no lounge.
+- Uma pessoa pode convidar colegas para uma pausa no café do hub (pela máquina de café).
 - A adesão às pausas é voluntária.
-- A área de lazer oferece jogos simples compartilhados, com modalidades a selecionar.
+- A mesa de jogos do hub tem o jogo da velha, para duas pessoas. Jogos novos ficam para uma etapa separada.
 - Personalização do avatar (definida em 23/10):
   - Quem entra pela primeira vez cria o avatar antes de tudo; depois, muda pelo próprio menu.
   - Peças: penteado (11, incluindo careca), expressão (5) e roupa (10), combináveis entre si.
@@ -180,7 +185,7 @@ Permanecem abertos o controle da fila, as permissões para trocar vídeos, o com
 ## 13. Visitantes e administração
 
 - Um integrante autorizado pode gerar um convite temporário para um visitante.
-- O visitante chega à recepção e solicita entrada ao anfitrião.
+- O visitante chega à entrada do hub e solicita entrada ao anfitrião. Ele circula só pelo hub e pela sala de reunião.
 - O anfitrião pode admitir ou recusar a entrada.
 - Visitantes são identificados e têm acesso limitado aos espaços e conteúdos autorizados.
 - A administração permite controlar integrantes, convites e configuração do escritório.

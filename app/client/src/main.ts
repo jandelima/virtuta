@@ -11,9 +11,8 @@ import { esc } from './ui/dom';
 /** Móveis usados na planta (só estes são baixados). */
 const FURNITURE = [
   'desk', 'computerScreen', 'computerKeyboard', 'computerMouse', 'kitchenCabinet', 'books', 'plantSmall2', 'pottedPlant',
-  'table', 'chairModernCushion', 'loungeDesignSofa', 'rugDoormat', 'coatRackStanding', 'kitchenSink',
-  'kitchenFridgeLarge', 'kitchenCoffeeMachine', 'kitchenMicrowave', 'tableRound', 'chair', 'rugRectangle', 'loungeSofa', 'loungeChair',
-  'tableCoffee', 'radio', 'lampRoundFloor', 'tableCoffeeSquare', 'benchCushionLow',
+  'table', 'rugDoormat', 'coatRackStanding', 'kitchenSink', 'kitchenFridgeLarge', 'kitchenCoffeeMachine', 'kitchenMicrowave',
+  'tableRound', 'chair', 'radio', 'tableCoffeeSquare', 'benchCushionLow',
 ];
 
 const $ = (id: string) => document.getElementById(id)!;

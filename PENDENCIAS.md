@@ -48,3 +48,12 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 - [x] **Piso da sala da equipe menos branco e brilhante:** off-white quente e fosco.
 - [x] **Trocar de lugar a cadeira laranja e a preta** da bancada principal.
 - [x] **Rádio com problemas para tocar links do YouTube:** sem ouvintes a rádio continuava correndo no relógio do servidor; quem ligava depois pedia um ponto além do fim da música, o YouTube recomeçava do zero para cada um e ninguém ficava sincronizado. Agora a rádio pausa sem ouvintes e retoma de onde parou; se a posição passar do fim, segue para a próxima; com uma música só na programação, ela repete.
+
+# Rodada 6 — 28/10: ambientes separados
+
+- [x] **Entrar na sala da equipe**, que ocupa a tela inteira: é tudo o que a pessoa vê enquanto está nela.
+- [x] **Hub** com o café, uma mesa para jogos 1 contra 1 (jogo da velha) e a caixa de sugestões; dele saem as portas para a sala da equipe e para a sala de reunião.
+- [x] **Sala de reunião** como ambiente próprio, pela porta do hub, com a porta que fecha, as batidas e a chamada única.
+- [x] **Portas**: atravessar escurece a tela por um instante; a lista de lugares, a de pessoas, o café e o "Voltei" levam a pessoa pelas portas sozinha.
+- [x] **Visitantes no mínimo**: chegam à entrada do hub e esperam ali; não entram na sala da equipe.
+- [x] **Saem** o lounge, a recepção com balcão, a área de lazer e o minimapa. A sala da equipe fica como está.

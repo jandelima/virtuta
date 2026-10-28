@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { CAFE_SPOT, REUNIAO, REUNIAO_DOOR, SALA, SALA_DOOR, areaAt, inside } from '../../shared/layout';
+import { CAFE_SPOT, DOORS, GUEST_ENTRY, REUNIAO, SALA, areaAt, doorGeom, inside, type Door, type SpaceId } from '../../shared/layout';
 import type { BoardElement, Conv, FocusSession, GameState, Note, Presence, PublicUser, RadioState, ServerMsg, Settings, StoredLook, Status as NetStatus } from '../../shared/protocol';
 import { api } from './api';
 import { Avatar } from './avatar';
@@ -14,7 +14,7 @@ import { buildEscritorio, type World } from './world/escritorio';
 import { mergeStatic } from './world/optimize';
 import { boardTex, gameTex, tvTex } from './world/live';
 import { nameplateTex } from './world/props';
-import type { Interactive, Seat } from './world/space';
+import type { Interactive, Seat, Space } from './world/space';
 import { Highlight } from './world/highlight';
 import { Shell } from './ui/shell';
 import { ConvView } from './ui/conv';
@@ -63,6 +63,11 @@ export class OfficeApp {
   boardListener: ((m: ServerMsg) => void) | null = null;
   followUntil = 0;
   followId: string | null = null;
+  /** Atravessando uma porta (tela escurecida): não anda nem atravessa de novo. */
+  private crossing = false;
+  /** Porta que a pessoa está indo atravessar e o que fazer do outro lado. */
+  private pending: { door: string; then: () => void } | null = null;
+  private fadeEl!: HTMLDivElement;
 
   constructor(readonly role: 'member' | 'admin' | 'guest') {
     this.sc = new Scene3D(document.getElementById('viewport')!);
@@ -79,6 +84,18 @@ export class OfficeApp {
   get guest() { return this.role === 'guest'; }
   get myAvatar() { return this.avatars.get(this.me); }
   get myPresence() { return this.presence.get(this.me); }
+  /** Ambiente onde a pessoa está: é o único desenhado. */
+  get here(): SpaceId {
+    const p = this.myAvatar?.pos ?? this.myPresence;
+    return (p && areaAt(p.x, p.z)?.id) || 'sala';
+  }
+  get space(): Space { return this.world.spaces[this.here]; }
+  /** Assento pelo id, em qualquer ambiente (quem está em outro também senta). */
+  seat(id: string | null) {
+    if (!id) return null;
+    for (const sp of Object.values(this.world.spaces)) { const s = sp.seats.get(id); if (s) return s; }
+    return null;
+  }
   now() { return Date.now() + this.serverOffset; }
   send: Net['send'] = (m) => this.net.send(m);
   name(id: string) { return this.users.get(id)?.name ?? 'Alguém'; }
@@ -93,26 +110,41 @@ export class OfficeApp {
 
   start() {
     this.world = buildEscritorio();
-    const { before, after } = mergeStatic(this.world.space.group);
+    let before = 0, after = 0;
+    for (const sp of Object.values(this.world.spaces)) {
+      const m = mergeStatic(sp.group);
+      before += m.before; after += m.after;
+      // quem vê um ambiente está dentro dele: as paredes de vidro ficam baixas, sem esconder ninguém
+      for (const c of sp.cutaways) { c.upper.visible = false; c.cap.visible = true; }
+    }
     console.info(`Cenário: ${before} malhas juntadas em ${after}`);
-    this.sc.setSpace(this.world.space);
+    this.sc.setSpace(this.world.spaces.sala);
     this.setupInteractives();
     this.setupInput();
+    this.fadeEl = document.createElement('div');
+    this.fadeEl.className = 'scene-fade';
+    document.getElementById('viewport')!.appendChild(this.fadeEl);
     this.sc.follow = () => {
       const f = this.followId && performance.now() < this.followUntil ? this.avatars.get(this.followId) : null;
-      return (f ?? this.myAvatar)?.pos ?? new THREE.Vector3(12, 0, 6);
+      return (f?.root.visible ? f : this.myAvatar)?.pos ?? new THREE.Vector3(4, 0, 4);
     };
     this.sc.onFrame = (dt) => this.frame(dt);
-    // dentro de uma sala, as paredes de vidro dela baixam para não esconder ninguém
-    this.sc.onRoom = (room) => {
-      for (const c of this.world.space.cutaways) {
-        const inside = c.room === room?.id;
-        c.upper.visible = !inside;
-        c.cap.visible = inside;
-      }
-      this.sc.refreshShadows();
-    };
     this.net.connect();
+  }
+
+  /** Mostra o ambiente onde a pessoa está e, nele, só quem está ali. */
+  private syncSpace() {
+    if (!this.world) return;
+    if (this.sc.space !== this.space) {
+      this.sc.setSpace(this.space);
+      this.highlight.show(null);
+      this.shell.renderAll();
+    }
+    const here = this.here;
+    for (const a of this.avatars.values()) {
+      const vis = areaAt(a.pos.x, a.pos.z)?.id === here;
+      if (a.root.visible !== vis) a.setActive(vis);
+    }
   }
 
   // ---------- mensagens do servidor ----------
@@ -129,7 +161,7 @@ export class OfficeApp {
           if (id === this.me) continue;
           const p = this.presence.get(id);
           if (p) Object.assign(p, { x, z, rot, seat });
-          this.avatars.get(id)?.follow(x, z, rot, seat ? this.world.space.seats.get(seat) ?? null : null);
+          this.avatars.get(id)?.follow(x, z, rot, this.seat(seat));
         }
         this.sc.wake(1500);
         return;
@@ -196,6 +228,7 @@ export class OfficeApp {
       this.sc.zoom = 1.15;
       this.sc.start();
       if (me) this.lastSent = { x: me.pos.x, z: me.pos.z, rot: 0, seat: null, at: 0 };
+      this.syncSpace();
       document.getElementById('loading')?.classList.add('done');
       // quem chega pela primeira vez monta o próprio avatar antes de tudo
       if (!this.guest && !this.users.get(this.me)?.look) this.shell.editAvatar(true);
@@ -225,7 +258,6 @@ export class OfficeApp {
       me: id === this.me,
       guest: u?.role === 'guest',
       unstable: p?.unstable,
-      space: 'terreo',
       look: u?.look ?? null,
     };
   }
@@ -281,19 +313,16 @@ export class OfficeApp {
     let a = this.avatars.get(p.id);
     if (visible && !a) {
       a = new Avatar(this.person(p.id));
-      a.spaceId = 'terreo';
       this.avatars.set(p.id, a);
       this.sc.scene.add(a.root);
-      const seat = p.seat ? this.world.space.seats.get(p.seat) : null;
+      const seat = this.seat(p.seat);
       if (seat) a.sit(seat); else a.place(p.x, p.z, p.rot);
+      a.setActive(areaAt(p.x, p.z)?.id === this.here);
     } else if (!visible && a) {
       this.removeAvatar(p.id);
       a = undefined;
     }
-    if (a && p.id !== this.me && fromInit) {
-      const seat = p.seat ? this.world.space.seats.get(p.seat) : null;
-      a.follow(p.x, p.z, p.rot, seat ?? null);
-    }
+    if (a && p.id !== this.me && fromInit) a.follow(p.x, p.z, p.rot, this.seat(p.seat));
     if (a) {
       Object.assign(a.person, this.person(p.id));
       a.refreshLabel();
@@ -383,7 +412,7 @@ export class OfficeApp {
   private personUnderMouse(px: number, py: number) {
     let best: string | null = null, bd = 30;
     for (const [id, a] of this.avatars) {
-      if (id === this.me) continue;
+      if (id === this.me || !a.root.visible) continue;
       const s = this.sc.toScreen(a.pos.clone().setY(a.pos.y + 0.6));
       const d = Math.hypot(s.x - px, s.y - py);
       if (d < bd) { bd = d; best = id; }
@@ -400,12 +429,12 @@ export class OfficeApp {
     const obj = this.interactiveAt(cx - r.left, cy - r.top);
     if (obj) return this.use(obj.it, obj.point);
     const { ground } = this.sc.pick(cx, cy);
-    if (ground && ground.x > 0 && ground.z > 0 && ground.x < this.world.space.w && ground.z < this.world.space.d) this.walkTo(ground.x, ground.z);
+    if (ground && this.space.contains(ground.x, ground.z)) this.walkTo(ground.x, ground.z);
   }
 
   seatNear(x: number, z: number, max: number) {
     let best: Seat | null = null, bd = max;
-    for (const s of this.world.space.seats.values()) {
+    for (const s of this.space.seats.values()) {
       const d = Math.hypot(s.x - x, s.z - z);
       const taken = [...this.avatars.values()].some((a) => a.seat === s && a !== this.myAvatar);
       if (d < bd && !taken) { best = s; bd = d; }
@@ -414,41 +443,111 @@ export class OfficeApp {
   }
 
   /** Anda até (x, z); se o ponto for um assento livre, senta nele (a não ser com `sit` falso). */
-  walkTo(x: number, z: number, then?: () => void, sit = true) {
+  walkTo(x: number, z: number, then?: () => void, sit = true): boolean {
     const me = this.myAvatar;
-    if (!me) return false;
+    if (!me || this.crossing) return false;
+    // em outro ambiente: primeiro as portas, depois o caminho até o ponto
+    const target = areaAt(x, z)?.id;
+    if (target && target !== this.here) return this.travel(target, () => { this.walkTo(x, z, then, sit); });
+    this.pending = null;
     const best = sit ? this.seatNear(x, z, 0.45) : null;
     if (best && best === me.seat) return true;
-    const ok = best ? me.goSit(this.world.space.nav, best, then) : me.goTo(this.world.space.nav, x, z, then);
+    const ok = best ? me.goSit(this.space.nav, best, then) : me.goTo(this.space.nav, x, z, then);
     if (ok) this.sc.markClick(x, z);
-    else this.notify.toast(this.guest && inside(SALA, x, z) ? 'Visitantes não entram na sala da equipe.' : 'Não há caminho até lá.');
+    else this.notify.toast('Não há caminho até lá.');
     this.followId = null;
     return ok;
   }
 
+  /** Vai até outro ambiente pelas portas (o hub liga os outros dois); `then` roda ao chegar. */
+  travel(to: SpaceId, then?: () => void): boolean {
+    if (this.crossing) return false;
+    const here = this.here;
+    if (to === here) { then?.(); return true; }
+    if (this.guest && to === 'sala') { this.notify.toast('Visitantes não entram na sala da equipe.'); return false; }
+    const next = here === 'hub' ? to : 'hub';
+    const d = DOORS.find((x) => x.space === here && doorTarget(x).space === next)!;
+    // reunião de porta fechada: quem está fora bate antes
+    if (!this.canCross(d)) { this.panels.open('porta'); return false; }
+    const g = doorGeom(d);
+    const ok = this.walkTo(g.c.x + g.n.x * 0.15, g.c.z + g.n.z * 0.15, undefined, false);
+    if (ok) this.pending = { door: d.id, then: () => { this.travel(to, then); } };
+    return ok;
+  }
+
+  /** Vai para um ambiente pela lista de lugares: a sala da equipe leva à própria mesa. */
+  goToArea(id: SpaceId) {
+    if (id === 'sala' && !this.guest && this.users.get(this.me)?.desk != null) return this.goToDesk();
+    if (id !== this.here) this.travel(id);
+  }
+
+  private canCross(d: Door) {
+    const to = doorTarget(d).space;
+    if (to === 'sala' && this.guest) return false;
+    if (d.id === 'hub-reuniao') return this.doorOpen || this.doorAllowed;
+    return true;
+  }
+
+  /** Quem anda até o vão de uma porta passa para o outro ambiente. */
+  private checkDoors() {
+    const me = this.myAvatar;
+    if (!me || me.seat || this.crossing || this.myPresence?.waiting) return;
+    const here = this.here;
+    for (const d of DOORS) {
+      if (d.space !== here) continue;
+      const g = doorGeom(d);
+      const dx = me.pos.x - g.c.x, dz = me.pos.z - g.c.z;
+      const depth = dx * g.n.x + dz * g.n.z, along = Math.abs(g.vertical ? dz : dx);
+      if (depth < 0.3 && along < g.width / 2 && this.canCross(d)) return this.cross(d);
+    }
+  }
+
+  /** Atravessa: a tela escurece por um instante e a pessoa aparece do lado de dentro da outra porta. */
+  private cross(d: Door) {
+    const me = this.myAvatar!;
+    const g = doorGeom(doorTarget(d));
+    const then = this.pending?.door === d.id ? this.pending.then : undefined;
+    this.pending = null;
+    this.crossing = true;
+    me.stop();
+    this.fadeEl.classList.add('on');
+    this.sc.wake(1200);
+    // logo depois da porta; se alguém estiver parado ali, um pouco para o lado
+    const nav = this.world.spaces[doorTarget(d).space].nav;
+    const spots = [0, 0.7, -0.7, 1.4, -1.4].map((k) => ({ x: g.c.x + g.n.x * 0.9 + g.n.z * k, z: g.c.z + g.n.z * 0.9 + g.n.x * k }));
+    const spot = spots.find((p) => nav.walkable(p.x, p.z) && ![...this.avatars.values()].some((a) => a !== me && Math.hypot(a.pos.x - p.x, a.pos.z - p.z) < 0.6)) ?? spots[0];
+    setTimeout(() => {
+      me.place(spot.x, spot.z, g.rot);
+      this.syncSpace();
+      this.fadeEl.classList.remove('on');
+      this.crossing = false;
+      then?.();
+    }, 170);
+  }
+
   /** Senta no assento `id`, se estiver livre; senão, anda até perto dele. */
   sitOn(id: string) {
-    const s = this.world.space.seats.get(id);
+    const s = this.seat(id);
     if (!s) return;
     const taken = [...this.avatars.values()].some((a) => a.seat === s && a !== this.myAvatar);
     if (taken) this.walkTo(s.x, s.z, undefined, false);
     else this.walkTo(s.x, s.z);
   }
 
-  /** Vai para o lounge e senta no primeiro lugar livre do sofá ou das poltronas. */
-  goLounge() {
-    const free = ['sofa-0', 'sofa-1', 'poltrona-w', 'poltrona-e'].find((id) => {
-      const s = this.world.space.seats.get(id)!;
+  /** Pausa no café do hub, sem ficar ausente: senta na primeira cadeira livre das mesinhas. */
+  goPause() {
+    const free = ['cafe-0-w', 'cafe-0-e', 'cafe-1-w', 'cafe-1-e'].find((id) => {
+      const s = this.seat(id)!;
       return ![...this.avatars.values()].some((a) => a.seat === s && a !== this.myAvatar);
     });
     if (free) this.sitOn(free);
-    else this.walkTo(12.2, 6.2);
+    else this.walkTo(CAFE_SPOT.x + 1.5, CAFE_SPOT.z + 0.9, undefined, false);
   }
 
   /** Senta na própria mesa. */
   goToDesk() {
     const u = this.users.get(this.me);
-    const s = u?.desk != null ? this.world.space.seats.get(`mesa-${u.desk}`) : null;
+    const s = u?.desk != null ? this.seat(`mesa-${u.desk}`) : null;
     if (s) this.walkTo(s.x, s.z);
   }
 
@@ -465,9 +564,10 @@ export class OfficeApp {
     if (k.has('d') || k.has('arrowright')) { mx += right.x; mz += right.y; }
     if (k.has('a') || k.has('arrowleft')) { mx -= right.x; mz -= right.y; }
     // depois de parar, a transição de andar para parado continua fluida por um tempo
-    if (!this.myPresence?.waiting && me.steer(mx, mz, dt, this.world.space.nav)) { this.followId = null; this.sc.wake(1500); }
+    if (!this.myPresence?.waiting && !this.crossing && me.steer(mx, mz, dt, this.space.nav)) { this.followId = null; this.pending = null; this.sc.wake(1500); }
     for (const a of this.avatars.values()) a.update(dt);
     this.separate();
+    this.checkDoors();
     if (this.mouseMoved) { this.mouseMoved = false; this.updateHover(); }
     if (me.moving) this.sc.wake(1500);
 
@@ -485,10 +585,11 @@ export class OfficeApp {
     // tarefas periódicas pelo relógio real (o dt do quadro tem teto e atrasaria em máquinas lentas)
     if (t - this.tick > 100) {
       this.tick = t;
+      this.syncSpace();
       this.updateLabels();
       // o que estava sob o mouse pode ter mudado (alguém sentou, a câmera andou)
       if (t - this.hoverAt > 400) this.updateHover();
-      this.sc.drawConvs(this.convs.filter((c) => c.kind !== 'room').map((c) => c.members.map((id) => this.avatars.get(id)).filter((a): a is Avatar => !!a)));
+      this.sc.drawConvs(this.convs.filter((c) => c.kind !== 'room').map((c) => c.members.map((id) => this.avatars.get(id)).filter((a): a is Avatar => !!a?.root.visible)));
     }
     if (t - this.slow > 1000) {
       this.slow = t;
@@ -503,7 +604,7 @@ export class OfficeApp {
 
   /** Ninguém atravessa ninguém: quem está em pé é afastado de quem está perto. */
   private separate() {
-    const list = [...this.avatars.values()];
+    const list = [...this.avatars.values()].filter((a) => a.root.visible);
     for (const a of list) {
       if (a.seat) continue;
       for (const b of list) {
@@ -514,7 +615,7 @@ export class OfficeApp {
         const push = (0.5 - dd) * (b.seat ? 1 : 0.5);
         const nx = dd > 1e-4 ? dx / dd : 1, nz = dd > 1e-4 ? dz / dd : 0;
         const tx = a.pos.x + nx * push, tz = a.pos.z + nz * push;
-        if (this.world.space.nav.walkable(tx, tz)) { a.pos.x = tx; a.pos.z = tz; }
+        if (this.space.nav.walkable(tx, tz)) { a.pos.x = tx; a.pos.z = tz; }
       }
     }
   }
@@ -535,10 +636,10 @@ export class OfficeApp {
   /** Se o objeto pode ser usado agora por esta pessoa. */
   private usable(it: Interactive) {
     if (it.id === 'seat') {
-      if (this.guest && it.seats.some((id) => { const s = this.world.space.seats.get(id)!; return inside(SALA, s.x, s.z); })) return false;
+      if (this.guest && it.seats.some((id) => { const s = this.seat(id)!; return inside(SALA, s.x, s.z); })) return false;
       return !!this.freeSeat(it);
     }
-    if (this.guest) return ['board:reuniao', 'porta', 'jogo'].includes(it.id);
+    if (this.guest) return ['board:reuniao', 'door:hub-reuniao', 'door:reuniao-hub', 'jogo'].includes(it.id);
     if (it.id.startsWith('mesa:')) return !!this.deskOwner(Number(it.id.slice(5)));
     return true;
   }
@@ -551,7 +652,7 @@ export class OfficeApp {
   private freeSeat(it: Interactive, near?: THREE.Vector3) {
     let best: Seat | null = null, bd = Infinity;
     for (const id of it.seats) {
-      const s = this.world.space.seats.get(id)!;
+      const s = this.seat(id)!;
       if ([...this.avatars.values()].some((a) => a.seat === s)) continue;
       const d = near ? Math.hypot(s.x - near.x, s.z - near.z) : 0;
       if (d < bd) { bd = d; best = s; }
@@ -567,11 +668,8 @@ export class OfficeApp {
       const u = this.deskOwner(Number(arg))!;
       return u.id === this.me ? { title: 'Sua mesa', hint: 'Ver bilhetes' } : { title: `Mesa de ${u.name.split(' ')[0]}`, hint: 'Deixar um bilhete' };
     }
-    if (kind === 'porta') {
-      const me = this.myPresence;
-      const inRoom = !!me && inside(REUNIAO, me.x, me.z);
-      return { title: it.title, hint: inRoom ? (this.doorOpen ? 'Fechar a porta' : 'Abrir a porta') : this.doorOpen || this.doorAllowed ? 'Entrar' : 'Bater na porta' };
-    }
+    if (it.id === 'door:reuniao-hub') return { title: it.title, hint: this.doorOpen ? 'Fechar a porta ou sair' : 'Abrir a porta ou sair' };
+    if (it.id === 'door:hub-reuniao') return { title: it.title, hint: this.doorOpen || this.doorAllowed ? 'Entrar' : 'Porta fechada: bater' };
     return { title: it.title, hint: it.hint };
   }
 
@@ -580,7 +678,7 @@ export class OfficeApp {
     const el = this.sc.renderer.domElement;
     this.ray.setFromCamera(new THREE.Vector2((px / el.clientWidth) * 2 - 1, -(py / el.clientHeight) * 2 + 1), this.sc.camera);
     let best: { it: Interactive; point: THREE.Vector3 } | null = null, bd = Infinity;
-    for (const it of this.world.space.interactives) {
+    for (const it of this.space.interactives) {
       if (!this.ray.ray.intersectsBox(it.box) || !this.usable(it)) continue;
       for (const m of it.meshes) {
         if (m.parent && !m.visible) continue;
@@ -624,7 +722,7 @@ export class OfficeApp {
     const me = this.myAvatar;
     if (!me || me.seat) return null;
     let best: Interactive | null = null, bd = 0.9;
-    for (const it of this.world.space.interactives) {
+    for (const it of this.space.interactives) {
       if (it.id === 'seat' || it.id.startsWith('mesa:') || !this.usable(it)) continue;
       const d = boxDist(it.box, me.pos.x, me.pos.z);
       if (d < bd) { bd = d; best = it; }
@@ -644,8 +742,8 @@ export class OfficeApp {
       if (s) this.walkTo(s.x, s.z);
       return;
     }
-    // o café já leva a pessoa até lá
-    if (it.id === 'cafe') return this.act(it);
+    // portas levam a pessoa até elas sozinhas
+    if (it.id.startsWith('door:')) return this.act(it);
     const me = this.myAvatar!;
     if (boxDist(it.box, me.pos.x, me.pos.z) < 1.0) return this.act(it);
     const spot = it.spot ?? this.approach(it);
@@ -658,7 +756,7 @@ export class OfficeApp {
 
   /** Ponto livre ao lado do objeto, do lado mais perto de quem vai até ele e com caminho. */
   private approach(it: Interactive) {
-    const nav = this.world.space.nav, me = this.myAvatar!;
+    const nav = this.space.nav, me = this.myAvatar!;
     const b = it.box, m = 0.5, pts: { x: number; z: number }[] = [];
     const x1 = b.min.x - m, x2 = b.max.x + m, z1 = b.min.z - m, z2 = b.max.z + m;
     for (let x = x1; x <= x2 + 1e-6; x += 0.2) pts.push({ x, z: z1 }, { x, z: z2 });
@@ -674,7 +772,11 @@ export class OfficeApp {
     const [kind, arg] = it.id.split(':');
     if (kind === 'board') return void this.panels.openBoard(arg);
     if (kind === 'mesa') return this.panels.openDesk(Number(arg));
-    if (kind === 'cafe') return this.goAfk();
+    if (kind === 'door') {
+      // dentro da reunião, a porta abre o painel (fechar, abrir ou sair); de fora, quem não pode entrar bate
+      if (arg === 'reuniao-hub' || (arg === 'hub-reuniao' && !this.doorOpen && !this.doorAllowed)) return this.panels.open('porta');
+      return void this.travel(doorTarget(DOORS.find((d) => d.id === arg)!).space);
+    }
     this.panels.open(kind);
   }
 
@@ -684,6 +786,7 @@ export class OfficeApp {
     const hovered = this.personUnderMouse(this.mouse.x, this.mouse.y);
     const mine = new Set(this.conv?.members ?? []);
     for (const [id, a] of this.avatars) {
+      if (!a.root.visible) continue;
       const near = me ? Math.hypot(a.pos.x - me.pos.x, a.pos.z - me.pos.z) < 2.6 : false;
       a.setCompact(!(showAll || near || mine.has(id) || id === hovered));
     }
@@ -772,8 +875,9 @@ export class OfficeApp {
     this.wasAdmitted = true;
     this.shell.screen(null);
     const me = this.myAvatar ?? (this.upsertPresence(this.myPresence!), this.myAvatar);
-    me?.place(2.6, 10.2, Math.PI);
-    this.notify.toast('Você foi admitido. A sala de reunião fica no fundo do salão, à direita.');
+    me?.place(GUEST_ENTRY.x, GUEST_ENTRY.z, Math.PI);
+    this.syncSpace();
+    this.notify.toast('Você foi admitido. A sala de reunião fica pela porta do fundo do hub.');
     this.shell.renderAll();
   }
 
@@ -785,20 +889,21 @@ export class OfficeApp {
     if (!open && wasOpen) this.doorAllowed = !!me && inside(REUNIAO, me.x, me.z);
     if (open) this.doorAllowed = false;
     this.world.door.visible = !open;
+    this.world.meetingLight.color.set(open ? '#22c55e' : '#ef4444');
+    this.world.meetingLight.emissive.set(open ? '#22c55e' : '#ef4444');
     this.applyDoorNav();
     this.sc.refreshShadows();
     if (!quiet && by && by !== this.me && wasOpen !== open) this.notify.toast(`${this.name(by)} ${open ? 'abriu' : 'fechou'} a porta da sala de reunião.`);
     this.panels.refresh('porta');
   }
 
-  /** Porta fechada vira parede para quem não está autorizado. */
+  /** Porta fechada vira parede para quem está fora e não foi autorizado; quem está dentro sempre sai. */
   applyDoorNav() {
-    const nav = this.world.space.nav;
-    const z = REUNIAO.z2, d = REUNIAO_DOOR;
-    if (this.doorOpen || this.doorAllowed) nav.open(d.x1 + 0.05, z - 0.3, d.x2 - 0.05, z + 0.3);
-    else nav.block(d.x1, z - 0.3, d.x2, z + 0.3);
+    const pass = this.doorOpen || this.doorAllowed;
+    gate(this.world.spaces.hub, 'hub-reuniao', pass);
+    gate(this.world.spaces.reuniao, 'reuniao-hub', pass || this.here === 'reuniao');
     // visitantes não passam pela porta da sala da equipe
-    if (this.guest) nav.block(SALA_DOOR.x - 0.3, SALA_DOOR.z1, SALA_DOOR.x + 0.3, SALA_DOOR.z2);
+    if (this.guest) gate(this.world.spaces.hub, 'hub-sala', false);
   }
 
   // ---------- cenário vivo ----------
@@ -893,4 +998,18 @@ export class OfficeApp {
 /** Distância no chão de um ponto até a caixa de um objeto (zero se estiver dentro). */
 function boxDist(b: THREE.Box3, x: number, z: number) {
   return Math.hypot(Math.max(b.min.x - x, 0, x - b.max.x), Math.max(b.min.z - z, 0, z - b.max.z));
+}
+
+/** Porta do outro lado de `d`. */
+function doorTarget(d: Door) {
+  return DOORS.find((x) => x.id === d.to)!;
+}
+
+/** Abre ou fecha a passagem pelo vão da porta `id` na navegação do ambiente. */
+function gate(sp: Space, id: string, open: boolean) {
+  const g = doorGeom(DOORS.find((d) => d.id === id)!);
+  const half = g.width / 2;
+  const [x1, z1, x2, z2] = g.vertical ? [g.c.x - 0.3, g.c.z - half, g.c.x + 0.3, g.c.z + half] : [g.c.x - half, g.c.z - 0.3, g.c.x + half, g.c.z + 0.3];
+  if (open) sp.nav.open(x1 + (g.vertical ? 0 : 0.05), z1 + (g.vertical ? 0.05 : 0), x2 - (g.vertical ? 0 : 0.05), z2 - (g.vertical ? 0.05 : 0));
+  else sp.nav.block(x1, z1, x2, z2);
 }

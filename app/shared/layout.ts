@@ -1,49 +1,66 @@
 // Planta do escritório, compartilhada por cliente (desenho 3D) e servidor (regras de conversa).
 // 1 unidade = 1 m. x cresce para a direita (leste), z para baixo (sul).
 //
-//  ┌──────────────┬────────────────────────┬──────────────────┐
-//  │              │                        │                  │
-//  │  Sala da     │ Lounge                 │ Sala de reunião  │
-//  │  equipe      │ (sai da porta da sala) │ (vidro)          │
-//  │              │                        ├──────────────────┤
-//  ├──────────┬───┴────────────────────────┤ Lazer            │
-//  │ Recepção │ Café                       │                  │
-//  └─entrada──┴────────────────────────────┴──────────────────┘
-
-export const W = 24;
-export const D = 12;
+// Cada ambiente é uma cena própria: quem está nele vê só ele. Os três ficam em trechos
+// distantes do mesmo plano, então distância, áreas e regras de conversa continuam valendo
+// sem saber de cenas; as portas levam de um ambiente a outro.
+//
+//   Sala da equipe        Hub                       Sala de reunião
+//   ┌────────────┐        ┌──────────────[▯]──┐     ┌────────────────┐
+//   │            ▯ ←────→ ▯ café   jogo       │     │                │
+//   │            │        │       sugestões   │     │                │
+//   └────────────┘        └──entrada──────────┘     └──[▯]───────────┘
+//                         (a porta do fundo do hub leva à porta da reunião)
 
 export interface Rect { x1: number; z1: number; x2: number; z2: number }
 
-export type AreaKind = 'room' | 'region';
+export type SpaceId = 'sala' | 'hub' | 'reuniao';
 export interface Area extends Rect {
-  id: string;
+  id: SpaceId;
   name: string;
-  kind: AreaKind;
-  /** Áreas acústicas diferentes nunca formam conversa juntas (paredes). */
-  acoustic: 'sala' | 'salao' | 'reuniao';
   hint: string;
 }
 
 export const SALA: Rect = { x1: 0, z1: 0, x2: 8.4, z2: 7.8 };
-export const REUNIAO: Rect = { x1: 15.6, z1: 0, x2: W, z2: 6.8 };
+export const HUB: Rect = { x1: 20, z1: 0, x2: 30, z2: 7 };
+export const REUNIAO: Rect = { x1: 40, z1: 0, x2: 48.4, z2: 6.8 };
 
 export const AREAS: Area[] = [
-  { id: 'sala', name: 'Sala da equipe', kind: 'room', acoustic: 'sala', ...SALA, hint: 'Mesas de cada integrante' },
-  { id: 'reuniao', name: 'Sala de reunião', kind: 'room', acoustic: 'reuniao', ...REUNIAO, hint: 'Chamada única para quem está dentro' },
-  { id: 'lounge', name: 'Lounge', kind: 'region', acoustic: 'salao', x1: 8.4, z1: 0, x2: 15.6, z2: 7.8, hint: 'Pausa para conversar' },
-  { id: 'recepcao', name: 'Recepção', kind: 'region', acoustic: 'salao', x1: 0, z1: 7.8, x2: 6, z2: D, hint: 'Visitantes aguardam aqui' },
-  { id: 'cafe', name: 'Café', kind: 'region', acoustic: 'salao', x1: 6, z1: 7.8, x2: 15.6, z2: D, hint: 'Ausente: fui tomar café' },
-  { id: 'lazer', name: 'Lazer', kind: 'region', acoustic: 'salao', x1: 15.6, z1: 6.8, x2: W, z2: D, hint: 'Jogos rápidos' },
+  { id: 'sala', name: 'Sala da equipe', ...SALA, hint: 'Mesas de cada integrante' },
+  { id: 'hub', name: 'Hub', ...HUB, hint: 'Café, jogo e caixa de sugestões' },
+  { id: 'reuniao', name: 'Sala de reunião', ...REUNIAO, hint: 'Chamada única para quem está dentro' },
 ];
 
+/** Ambiente de um ponto; a margem cobre o vão das portas, um pouco além da parede. */
 export function areaAt(x: number, z: number): Area | undefined {
-  // salas primeiro: são fechadas e têm prioridade sobre as regiões vizinhas
-  return AREAS.find((a) => a.kind === 'room' && inside(a, x, z)) ?? AREAS.find((a) => inside(a, x, z));
+  return AREAS.find((a) => x >= a.x1 - 1 && x <= a.x2 + 1 && z >= a.z1 - 1 && z <= a.z2 + 1);
 }
 
 export function inside(r: Rect, x: number, z: number) {
   return x >= r.x1 && x <= r.x2 && z >= r.z1 && z <= r.z2;
+}
+
+/**
+ * Porta entre ambientes: um vão em uma das paredes (`wall`: n, s, e, w) do ambiente `space`,
+ * de `a1` a `a2` ao longo dela. Quem atravessa aparece do lado de dentro da porta `to`.
+ */
+export interface Door { id: string; space: SpaceId; wall: 'n' | 's' | 'e' | 'w'; a1: number; a2: number; to: string }
+export const DOORS: Door[] = [
+  { id: 'sala-hub', space: 'sala', wall: 'e', a1: 0.1, a2: 1.0, to: 'hub-sala' },
+  { id: 'hub-sala', space: 'hub', wall: 'w', a1: 1.0, a2: 2.0, to: 'sala-hub' },
+  { id: 'hub-reuniao', space: 'hub', wall: 'n', a1: 26.6, a2: 27.6, to: 'reuniao-hub' },
+  { id: 'reuniao-hub', space: 'reuniao', wall: 's', a1: 40.6, a2: 41.6, to: 'hub-reuniao' },
+];
+
+/** Geometria de uma porta: centro no plano da parede e direção para dentro do ambiente. */
+export function doorGeom(d: Door) {
+  const r = AREAS.find((a) => a.id === d.space)!;
+  const mid = (d.a1 + d.a2) / 2;
+  const at = { n: r.z1, s: r.z2, e: r.x2, w: r.x1 }[d.wall];
+  const vertical = d.wall === 'e' || d.wall === 'w';
+  const n = { n: { x: 0, z: 1 }, s: { x: 0, z: -1 }, e: { x: -1, z: 0 }, w: { x: 1, z: 0 } }[d.wall];
+  const c = vertical ? { x: at, z: mid } : { x: mid, z: at };
+  return { c, n, vertical, at, width: d.a2 - d.a1, rot: Math.atan2(n.x, n.z) };
 }
 
 /** Folga entre o quadro e a primeira fileira de mesas da sala. */
@@ -59,13 +76,12 @@ export const DESKS: Desk[] = [
   ...[1.3, 3.5, 5.7].map((x, i) => ({ index: 6 + i, x, z: SALA.z2 - 0.4, side: 'n' as const })),
 ];
 
-/** Onde a pessoa aparece ao entrar. */
-export const ENTRY = { x: 2.6, z: 10.6 };
-export const SALA_DOOR = { x: SALA.x2, z1: 0.1, z2: 1.0 };
-/** Porta da sala de reunião (parede sul, perto do canto oeste). */
-export const REUNIAO_DOOR = { z: REUNIAO.z2, x1: 16.2, x2: 17.2 };
-/** Ponto do café para quem fica ausente. */
-export const CAFE_SPOT = { x: 7.3, z: 9.1 };
+/** Onde aparece quem entra sem mesa (quem tem mesa chega sentado nela). */
+export const ENTRY = { x: 6.6, z: 1.6 };
+/** Visitantes chegam pela entrada do hub e esperam ali. */
+export const GUEST_ENTRY = { x: HUB.x1 + 2.0, z: HUB.z2 - 0.9 };
+/** Ponto do café para quem fica ausente: na frente da máquina de café do hub. */
+export const CAFE_SPOT = { x: HUB.x1 + 0.75, z: 1.2 };
 
 /** Distâncias de conversa (m) e tempos (s): entrar exige permanência; sair tem tolerância. */
 export const PROX = { join: 1.4, leave: 2.2, dwell: 0.5, grace: 0.7 };

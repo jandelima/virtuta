@@ -63,14 +63,12 @@ export class Avatar {
   private targetRot = 0;
   private emoteTimer = 0;
   seat?: Seat;
-  spaceId: string;
   speaking = false;
   inCall = false;
   micOn = false;
 
   constructor(readonly person: Person) {
     this.mount();
-    this.spaceId = person.space;
 
     this.labelEl = document.createElement('div');
     this.labelEl.className = 'tag';

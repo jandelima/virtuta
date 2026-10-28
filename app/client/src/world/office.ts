@@ -10,7 +10,7 @@ export function plant(sp: Space, x: number, z: number, kind = 'pottedPlant', s =
   sp.model(kind, x, z, { s, pad: 0.15 });
 }
 
-export function chairAt(sp: Space, id: string, x: number, z: number, face: Facing, model = 'chairModernCushion') {
+export function chairAt(sp: Space, id: string, x: number, z: number, face: Facing, model = 'chair') {
   const { obj } = sp.model(model, x, z, { rot: FACE[face], pad: 0.06 });
   sp.seat(id, x, z, face, SEAT_Y.chair);
   sp.sittable(obj, id);

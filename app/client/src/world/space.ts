@@ -1,21 +1,13 @@
 import * as THREE from 'three';
 import { furniture } from '../assets';
 import { NavGrid } from './nav';
+import type { Rect, SpaceId } from '../../../shared/layout';
 
 /** Escala dos móveis do kit em relação aos personagens. */
 export const FS = 1.6;
 
 export const FACE = { s: 0, e: Math.PI / 2, n: Math.PI, w: -Math.PI / 2 } as const;
 export type Facing = keyof typeof FACE;
-
-export interface Zone {
-  id: string;
-  name: string;
-  x1: number; z1: number; x2: number; z2: number;
-  tint: string;
-  /** Subárea que, para o destaque, pertence a outra sala. */
-  parent?: string;
-}
 
 export interface Seat {
   id: string;
@@ -81,10 +73,10 @@ function tinted(src: THREE.MeshStandardMaterial, tint: string) {
   return m;
 }
 
+/** Um ambiente (sala da equipe, hub, sala de reunião): uma cena própria, com navegação própria. */
 export class Space {
   readonly group = new THREE.Group();
   readonly nav: NavGrid;
-  readonly zones: Zone[] = [];
   readonly seats = new Map<string, Seat>();
   readonly interactives: Interactive[] = [];
   readonly walls: WallSeg[] = [];
@@ -93,11 +85,18 @@ export class Space {
   private into: THREE.Object3D = this.group;
   readonly lamps: THREE.PointLight[] = [];
   readonly glowMats: THREE.MeshStandardMaterial[] = [];
-  spawn = new THREE.Vector3();
 
-  constructor(readonly id: string, readonly name: string, readonly w: number, readonly d: number) {
-    this.nav = new NavGrid(0, 0, w, d);
+  constructor(readonly id: SpaceId, readonly name: string, readonly rect: Rect) {
+    // um pouco além das paredes: o vão das portas fica do lado de fora
+    this.nav = new NavGrid(rect.x1 - 1, rect.z1 - 1, rect.x2 + 1, rect.z2 + 1);
+    this.nav.block(rect.x1 - 1, rect.z1 - 1, rect.x2 + 1, rect.z2 + 1);
+    this.nav.open(rect.x1, rect.z1, rect.x2 - 0.01, rect.z2 - 0.01);
     this.group.name = id;
+  }
+
+  contains(x: number, z: number) {
+    const r = this.rect;
+    return x >= r.x1 && x <= r.x2 && z >= r.z1 && z <= r.z2;
   }
 
   box(x: number, y: number, z: number, sx: number, sy: number, sz: number, mat: THREE.Material, shadow = true) {
@@ -123,21 +122,6 @@ export class Space {
     m.userData.floor = true;
     this.group.add(m);
     return m;
-  }
-
-  zone(id: string, name: string, x1: number, z1: number, x2: number, z2: number, tint: string, parent?: string) {
-    this.zones.push({ id, name, x1, z1, x2, z2, tint, parent });
-  }
-
-  zoneAt(x: number, z: number) {
-    // a zona menor ganha, para que salas dentro de áreas abertas sejam reconhecidas
-    let best: Zone | undefined;
-    for (const zn of this.zones) {
-      if (x >= zn.x1 && x <= zn.x2 && z >= zn.z1 && z <= zn.z2) {
-        if (!best || (zn.x2 - zn.x1) * (zn.z2 - zn.z1) < (best.x2 - best.x1) * (best.z2 - best.z1)) best = zn;
-      }
-    }
-    return best;
   }
 
   /** Posiciona um modelo do kit pelo centro da base, com rotação e bloqueio na navegação. */

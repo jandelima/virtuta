@@ -2,7 +2,6 @@ import type { Track } from 'livekit-client';
 import type { OfficeApp } from '../app';
 import type { Conv } from '../../../shared/protocol';
 import type { Feed } from '../media';
-import { REUNIAO, REUNIAO_DOOR } from '../../../shared/layout';
 import { icon } from './icons';
 import { esc } from './dom';
 
@@ -105,8 +104,8 @@ export class ConvView {
     const c = app.conv;
     if (!c) return;
     if (c.kind === 'room') {
-      // sai da sala pela porta
-      app.walkTo((REUNIAO_DOOR.x1 + REUNIAO_DOOR.x2) / 2, REUNIAO.z2 + 0.9);
+      // sai da sala pela porta, para o hub
+      app.travel('hub');
     } else app.send({ t: 'leaveConv' });
   }
 
