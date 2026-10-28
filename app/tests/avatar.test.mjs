@@ -8,7 +8,7 @@ import { createServer } from 'node:net';
 import Database from 'better-sqlite3';
 import puppeteer from 'puppeteer-core';
 
-test('avatar só fecha após confirmar gravação, permite repetir falha e persiste após refresh', { timeout: 120_000 }, async () => {
+test('avatar confirma gravação e mantém a roupa visível após refresh e reconexão', { timeout: 120_000 }, async () => {
   const executablePath = process.env.CHROME_BIN ?? ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(existsSync);
   assert.ok(executablePath, 'Defina CHROME_BIN com o caminho do Chrome/Chromium');
   const folder = mkdtempSync(join(tmpdir(), 'virtuta-avatar-'));
@@ -80,6 +80,36 @@ test('avatar só fecha após confirmar gravação, permite repetir falha e persi
     assert.deepEqual(after.look, before);
     assert.deepEqual(after.avatar, before);
     assert.equal(after.editor, false);
+
+    // Ao reconectar, conferir a malha desenhada, não apenas os dados do avatar.
+    const geometry = () => page.evaluate(() => {
+      const body = window.__app.myAvatar.model.getObjectByName('body-mesh');
+      let hash = 2166136261;
+      for (const attr of ['position', 'color']) {
+        for (const value of body.geometry.attributes[attr].array) hash = Math.imul(hash ^ Math.round(value * 1e6), 16777619);
+      }
+      return hash >>> 0;
+    });
+    const previousGeometry = await geometry();
+    await page.evaluate(() => {
+      const net = window.__app.net;
+      net.stopped = true;
+      net.ws.close();
+    });
+    await page.waitForFunction(() => window.__app.netState === 'closed');
+    const savedLook = { ...before, outfit: 'female-e', top: '#111216', bottom: '#111216', detail: '#ec7a3c' };
+    const token = db.prepare('SELECT token FROM sessions WHERE guest = 0').get().token;
+    const response = await fetch(base + '/api/me/look', { method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: `vt_sess=${token}`, origin: base },
+      body: JSON.stringify({ look: savedLook }) });
+    assert.equal(response.status, 200);
+    await page.evaluate(() => window.__app.net.connect());
+    await page.waitForFunction(() => window.__app.netState === 'online' && window.__app.users.get(window.__app.me)?.look?.outfit === 'female-e');
+    const reconnectedGeometry = await geometry();
+    assert.notEqual(reconnectedGeometry, previousGeometry, 'Reconexão deve remontar a roupa visível quando o visual salvo mudou');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.__app?.me && window.__app.myAvatar);
+    assert.equal(await geometry(), reconnectedGeometry, 'Roupa após reconexão e após refresh deve ser idêntica');
     assert.deepEqual(errors, []);
   } finally {
     releaseSave?.();

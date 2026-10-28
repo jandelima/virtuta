@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import { buildCharacter, disposeCharacter, resolveLook, type StoredLook } from './look';
+import { buildCharacter, disposeCharacter, resolveLook } from './look';
 import type { NavGrid } from './world/nav';
 import type { Seat } from './world/space';
 import { STATUS_COLOR, type Person } from './people';
@@ -56,6 +56,7 @@ export class Avatar {
   private readonly labelEl: HTMLDivElement;
   private mixer!: THREE.AnimationMixer;
   private model?: THREE.Object3D;
+  private mountedAppearance = '';
   private readonly actions = new Map<string, THREE.AnimationAction>();
   private current?: THREE.AnimationAction;
   private path: THREE.Vector3[] = [];
@@ -98,11 +99,15 @@ export class Avatar {
     this.current = undefined;
     for (const clip of animations) this.actions.set(clip.name, this.mixer.clipAction(clip));
     if (playing) this.play(playing, 0);
+    this.mountedAppearance = JSON.stringify([this.person.model, this.person.look]);
   }
 
-  setLook(look: StoredLook | null) {
-    this.person.look = look;
-    this.mount();
+  /** Reconcilia os dados recebidos com o visual que está realmente desenhado. */
+  setPerson(person: Person) {
+    const appearance = JSON.stringify([person.model, person.look]);
+    Object.assign(this.person, person);
+    if (appearance !== this.mountedAppearance) this.mount();
+    this.refreshLabel();
   }
 
   /** Libera as malhas geradas para este personagem (ao sair de cena). */

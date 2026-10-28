@@ -293,11 +293,7 @@ export class OfficeApp {
     const prev = this.users.get(u.id);
     this.users.set(u.id, u);
     const a = this.avatars.get(u.id);
-    if (a) {
-      Object.assign(a.person, { name: u.name, model: u.model, color: u.color });
-      if (JSON.stringify(prev?.look) !== JSON.stringify(u.look) || prev?.model !== u.model) a.setLook(u.look);
-      a.refreshLabel();
-    }
+    a?.setPerson(this.person(u.id));
     // um nome novo pode criar (ou desfazer) um xará: os balões dos outros mudam junto
     if (prev?.name !== u.name) this.refreshAllPeople();
     Object.assign(this.portraits, renderPortraits([this.person(u.id)]));
@@ -323,10 +319,7 @@ export class OfficeApp {
       a = undefined;
     }
     if (a && p.id !== this.me && fromInit) a.follow(p.x, p.z, p.rot, this.seat(p.seat));
-    if (a) {
-      Object.assign(a.person, this.person(p.id));
-      a.refreshLabel();
-    }
+    a?.setPerson(this.person(p.id));
 
     if (!fromInit) this.shell.renderPeople();
     if (p.id === this.me && !fromInit) { this.shell.renderMe(); this.shell.renderDock(); }
@@ -349,7 +342,7 @@ export class OfficeApp {
   }
 
   refreshAllPeople() {
-    for (const [id, a] of this.avatars) { Object.assign(a.person, this.person(id)); a.refreshLabel(); }
+    for (const [id, a] of this.avatars) a.setPerson(this.person(id));
     this.shell.renderPeople();
     this.shell.renderMe();
   }
