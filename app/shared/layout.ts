@@ -21,7 +21,7 @@ export interface Area extends Rect {
   hint: string;
 }
 
-export const SALA: Rect = { x1: 0, z1: 0, x2: 8.4, z2: 7.8 };
+export const SALA: Rect = { x1: 0, z1: 0, x2: 8.4, z2: 15.6 };
 export const HUB: Rect = { x1: 20, z1: 0, x2: 30, z2: 7 };
 export const REUNIAO: Rect = { x1: 40, z1: 0, x2: 48.4, z2: 6.8 };
 
@@ -68,13 +68,15 @@ export const BOARD_GAP = 0.9;
 
 /** Estações de trabalho da sala: posição da mesa e lado em que a pessoa senta. */
 export interface Desk { index: number; x: number; z: number; side: 'n' | 's' }
-export const DESKS: Desk[] = [
-  ...[0.95, 2.75, 4.55].flatMap((x, i) => [
-    { index: i * 2, x, z: 2.1 + BOARD_GAP, side: 'n' as const },
-    { index: i * 2 + 1, x, z: 2.9 + BOARD_GAP, side: 's' as const },
+/** Distância entre o centro de uma ilha de mesas e o da seguinte (com o corredor entre elas). */
+const ISLAND_PITCH = 4.4;
+/** Três ilhas iguais, uma abaixo da outra; cada uma tem 3 mesas de cada lado. */
+export const DESKS: Desk[] = [0, 1, 2].flatMap((k) =>
+  [0.95, 2.75, 4.55].flatMap((x, i) => [
+    { index: k * 6 + i * 2, x, z: 2.1 + BOARD_GAP + k * ISLAND_PITCH, side: 'n' as const },
+    { index: k * 6 + i * 2 + 1, x, z: 2.9 + BOARD_GAP + k * ISLAND_PITCH, side: 's' as const },
   ]),
-  ...[1.3, 3.5, 5.7].map((x, i) => ({ index: 6 + i, x, z: SALA.z2 - 0.4, side: 'n' as const })),
-];
+);
 
 /** Onde aparece quem entra sem mesa (quem tem mesa chega sentado nela). */
 export const ENTRY = { x: 6.6, z: 1.6 };

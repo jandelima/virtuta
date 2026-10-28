@@ -57,3 +57,7 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 - [x] **Portas**: atravessar escurece a tela por um instante; a lista de lugares, a de pessoas, o café e o "Voltei" levam a pessoa pelas portas sozinha.
 - [x] **Visitantes no mínimo**: chegam à entrada do hub e esperam ali; não entram na sala da equipe.
 - [x] **Saem** o lounge, a recepção com balcão, a área de lazer e o minimapa. A sala da equipe fica como está.
+
+# Rodada 7 — 29/10
+
+- [x] **Sala da equipe com o dobro do tamanho, para baixo, e três ilhas iguais à do meio** (18 mesas). A fileira de baixo sai; os armários ficam como estão.

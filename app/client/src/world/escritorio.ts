@@ -13,7 +13,9 @@ import { boardTex, gameTex, tvTex } from './live';
 
 const DESK_W = 1.8, DESK_D = 0.8, DESK_H = 0.38 * FS;
 const opposite: Record<Facing, Facing> = { n: 's', s: 'n', e: 'w', w: 'e' };
-const CHAIR_COLORS = ['#2f4f9a', '#9b3a36', '#2f6b52', '#b4692c', '#4a4f5a', '#5d4387', '#22708c', '#8c7330', '#7a3d5c', '#3f6f8f'];
+// uma cor por mesa; as dez primeiras são as da ilha original e da antiga fileira
+const CHAIR_COLORS = ['#2f4f9a', '#9b3a36', '#2f6b52', '#b4692c', '#4a4f5a', '#5d4387', '#22708c', '#8c7330', '#7a3d5c', '#3f6f8f',
+  '#5f7a3a', '#a65e7a', '#2d5f6e', '#9a5b34', '#3b4a8c', '#7d6a4f', '#5a3e6b', '#2f7a5c'];
 
 export interface DeskHandle { desk: Desk; seat: string; plate: THREE.Mesh; note: THREE.Mesh }
 
@@ -237,7 +239,7 @@ function buildSala(boards: Map<string, THREE.MeshStandardMaterial>) {
 
   // laje com o corredor que passa do lado de fora do vidro, e gramado com árvores a oeste
   slab(sp, SALA, { e: 1.2, s: 1.2 });
-  garden(sp, SALA, [[1.3, 3.9, 3, 1.6], [3.8, 3.5, 7, 1.7], [2.6, 4.2, 11, 2.6], [7.0, 3.6, 5, 1.9]]);
+  garden(sp, SALA, [[1.3, 3.9, 3, 1.6], [3.8, 3.5, 7, 1.7], [2.6, 4.2, 11, 2.6], [7.0, 3.6, 5, 1.9], [9.6, 3.8, 31, 2.4], [11.8, 3.4, 37, 1.6], [14.4, 4.0, 41, 2.2]]);
 
   // off-white quente e fosco: o branco puro com brilho cansava a vista
   sp.floor(SALA.x1, SALA.z1, SALA.x2, SALA.z2, floorMat(tiles('#ddd6ca', '#d8d1c4', 'rgba(80,65,45,0.12)', 4), 0.75), 2.4);
@@ -247,7 +249,7 @@ function buildSala(boards: Map<string, THREE.MeshStandardMaterial>) {
 
   // paredes externas inteiras no fundo e à esquerda; o fundo segue pelo corredor
   sp.wall(0, 0, SALA.x2 + 1.2, 0, { h: 2.4 });
-  sp.wall(0, 0, 0, SALA.z2 + 1.2, { h: 2.4, windows: [[1.8, 5.0]] });
+  sp.wall(0, 0, 0, SALA.z2 + 1.2, { h: 2.4, windows: [[1.8, 5.0], [9.6, 12.8]] });
 
   const salaCabinets = Array.from({ length: 6 }, (_, i) => {
     const z0 = 2.0, len = (6.6 - z0) / 6;
@@ -275,8 +277,9 @@ function buildSala(boards: Map<string, THREE.MeshStandardMaterial>) {
   sp.model('books', SALA.x2 - 0.25, 3.4 + F, { rot: FACE.w, y: 0.9, block: false });
   sp.model('plantSmall2', SALA.x2 - 0.25, 6.2, { y: 0.9, block: false, s: FS * 2 });
   sp.model('pottedPlant', 0.4, 0.4, { pad: 0.12 });
-  sp.lamp(2.8, 2.2, 3.3, '#ffd6a0', 5, 7);
-  sp.lamp(6.4, 2.2, 3.6, '#ffd6a0', 4, 6);
+  // uma luminária sobre cada ilha e uma no corredor da direita
+  for (const k of [0, 1, 2]) sp.lamp(2.8, 2.2, 3.4 + k * 4.4, '#ffd6a0', 5, 7);
+  sp.lamp(6.4, 2.2, 7.8, '#ffd6a0', 4, 8);
 
   sp.finalize();
   return { space: sp, desks, low };

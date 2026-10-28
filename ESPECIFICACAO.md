@@ -45,7 +45,7 @@ Definido em 28/10: o escritório tem três ambientes, cada um uma cena própria.
 - A porta da sala da equipe fica sempre aberta. A da reunião pode ser fechada por quem está dentro; vista do hub, uma luz sobre ela fica verde (aberta) ou vermelha (fechada), e quem chega bate.
 - Ir a outro ambiente pela lista de lugares, pela lista de pessoas ou pelos atalhos (café, voltar à mesa) leva a pessoa pelas portas sozinha.
 - Saíram em 28/10: o lounge, a recepção com balcão e espera, a área de lazer com pufes e o minimapa.
-- A sala da equipe continua com a mesma disposição; o Jan vai alterá-la depois.
+- A sala da equipe tem o dobro da profundidade original (29/10): três ilhas iguais, uma abaixo da outra, cada uma com 3 mesas de cada lado (18 mesas). A fileira de 3 mesas junto ao vidro saiu; os armários com a rádio continuam no alto da parede direita.
 
 Os quadros ficam na sala da equipe e na sala de reunião.
 
