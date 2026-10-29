@@ -64,3 +64,42 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 - [x] **Cadeiras sortidas** em cinco cores (laranja, vermelho, azul, roxo e preto), sem repetir cor entre vizinhas.
 - [x] **Câmera mais perto, acompanhando a pessoa**: mesmo tamanho de gente nos três ambientes; na sala, a vista segue quem anda e para nas paredes; o botão abaixo do zoom mostra a sala inteira.
 - [x] **Dois ar-condicionados** na parede esquerda da sala, logo depois de cada janela, com uma folga.
+
+# Rodada 8 — 29/10: achados de UX escolhidos (relatorios/ux-2.md e ux-1.md)
+
+- [x] **#1 Criador de avatar** pergunta antes de descartar alterações (clique fora, Esc, Cancelar).
+- [x] **#4 Conversa involuntária** ao passar perto de quem está sentado.
+- [x] **#5 Nomes dos colegas** em vez de bolinhas sem nome.
+- [x] **#7 Placa na porta da sala** para o hub.
+- [x] **#8 Dica do objeto** que não sai da tela na borda.
+- [x] **#9 Porta fechada da reunião** visível de fora (lista de lugares e luz).
+- [x] **#10 Botão de enquadramento** com ícone e rótulo de estado.
+- [x] **#11 Aviso quando alguém entra em conversa** com você (som e notificação com a aba escondida).
+- [x] **#12 Ícone "em conversa"** na lista, sem confundir com microfone ligado.
+- [x] **#13 Microfone e câmera desligados** em cinza, não em vermelho.
+- [x] **#14 Cartão da conversa** fora de baixo da gaveta e do aviso de conexão.
+- [x] **#15 Aviso de falha de mídia** com "Tentar de novo", fechar e sumindo fora de conversa.
+- [x] **#16 Microfone, câmera e tela** com o quadro aberto e na apresentação.
+- [x] **#17 "Compartilhar tela"** desabilitado fora de conversa.
+- [x] **#19 Pedidos pendentes** que não se perdem na pilha de avisos.
+- [x] **#20 Batida na porta** resolvida para todos, e quem foi autorizado entra sozinho.
+- [x] **#23 Bilhetes**: marcar como lidos, apagar e fechar o aviso ao abrir.
+- [x] **#25 Status**: sugestões com prazo; "Voltei" só para quem foi ao café.
+- [x] **#26 Lista de Pessoas**: "Ninguém encontrado" e bilhete para quem está offline.
+- [x] **#27 Botão Foco do dock** acompanha a sessão coletiva e não tira ninguém dela.
+- [x] **#28 Textos e restos da sessão coletiva.**
+- [x] **#29 Convite de pausa** não chega a quem está em reunião ou em conversa.
+- [x] **#30 Jogo da velha** libera quem saiu do hub ou ficou parado; sair da mesa levanta o boneco.
+- [x] **#31 Botões desabilitados** com cara de desabilitados.
+- [x] **#32 Painel da rádio** não apaga o link sendo digitado.
+- [x] **#33 Rádio** sem laço de erro com vídeo indisponível; vídeo recolhível.
+- [x] **#34 Programação da rádio editável**: remover, aviso de quem pulou, "+" com rótulo.
+- [x] **#35 Quadro**: redimensionar, selecionar vários, ferramenta que fica, nome da cópia sem `prompt()`, Esc só desmarca, cópia recuperada na parede.
+- [x] **#38 Telas "Você saiu" e "Outra aba"** cobrem o app inteiro.
+- [x] **#40 Painel da pessoa** sem repetição, assunto em uma linha e foco automático.
+- [x] **#42 Conversa e apresentação** sem redesenhar tudo a cada troca de quem fala.
+- [x] **P4 Lista de atalhos** acessível em qualquer tela.
+- [x] **P6 Dois "Foco"**: nome e ícone que não se confundem.
+- [x] **P7 "Sair do escritório"** confirma quando há conversa ou rádio.
+- [x] **P8 Levantar a mão** no lugar do aceno duplicado.
+- [x] **De quebra, no mesmo código:** "Responder" um bilhete de quem não tem mesa abria "Mesa livre" (#22); o botão da rádio fora da sala diz "Ouvir ao voltar à sala".

@@ -9,7 +9,7 @@ import { ago, esc } from './dom';
 
 type Tool = 'select' | 'pen' | 'sticky' | 'text' | 'rect' | 'ellipse' | 'arrow' | 'eraser' | 'hand';
 const TOOLS: [Tool, string, string, string][] = [
-  ['select', 'pointer', 'Selecionar e mover', 'V'], ['hand', 'move', 'Mover o quadro', 'H'], ['pen', 'pen', 'Caneta', 'P'],
+  ['select', 'pointer', 'Selecionar e mover (Shift soma à seleção)', 'S'], ['hand', 'move', 'Mover o quadro', 'H'], ['pen', 'pen', 'Caneta', 'P'],
   ['sticky', 'sticky', 'Post-it', 'N'], ['text', 'text', 'Texto', 'T'], ['rect', 'rect', 'Retângulo', 'R'],
   ['ellipse', 'ellipse', 'Elipse', 'O'], ['arrow', 'arrow', 'Seta', 'A'], ['eraser', 'eraser', 'Borracha', 'E'],
 ];
@@ -29,7 +29,10 @@ export function openBoard(app: OfficeApp, boardId: string) {
   let tool: Tool = 'pen';
   let ink = INK[0], paper = PAPER[0], size = 3;
   let view = { x: 0, y: 0, s: 1 };
-  let selected: string | null = null;
+  /** Itens selecionados: clique escolhe um, Shift+clique soma, arrastar no vazio seleciona uma área. */
+  let selected = new Set<string>();
+  /** Post-it e texto voltam para Selecionar depois de criados, a menos que a ferramenta esteja presa. */
+  let keep = false;
   let dirty = true;
   const undo: { put: BoardElement[]; del: string[] }[] = [];
   let loaded = false;
@@ -41,7 +44,7 @@ export function openBoard(app: OfficeApp, boardId: string) {
   app.sceneSide('board', true);
   host.innerHTML = `<div class="bd-top"><span class="dic">${icon('board')}</span><div class="bd-title"><b id="bdTitle">Carregando…</b><small id="bdSub">Salvo automaticamente</small></div>
     <div class="bd-people" id="bdPeople"></div>
-    <button class="btn soft" id="bdCopy">${icon('copy')}Salvar cópia</button>
+    <span class="bd-copy-wrap"><button class="btn soft" id="bdCopy">${icon('copy')}Salvar cópia</button><form class="bd-pop" id="bdCopyForm" hidden><label for="bdCopyName">Nome da cópia</label><input id="bdCopyName" maxlength="60"/><span class="row"><button type="button" class="btn soft" id="bdCopyNo">Cancelar</button><button class="btn primary">Salvar</button></span></form></span>
     <button class="btn soft" id="bdSaved">${icon('folder')}Cópias e quadros</button>
     <button class="btn soft" id="bdPng">${icon('screen')}Baixar imagem</button>
     <button class="btn primary" id="bdClose">Fechar</button></div>
@@ -118,12 +121,14 @@ export function openBoard(app: OfficeApp, boardId: string) {
       '<span class="div"></span>' +
       (tool === 'sticky' ? PAPER : INK).map((c) => `<button class="sw${(tool === 'sticky' ? paper : ink) === c ? ' on' : ''}" data-color="${c}" style="--c:${c}" aria-label="Cor"></button>`).join('') +
       (tool === 'pen' || tool === 'rect' || tool === 'ellipse' || tool === 'arrow' ? `<span class="div"></span>${[2, 4, 8].map((s) => `<button class="size${size === s ? ' on' : ''}" data-size="${s}" title="Espessura"><i style="width:${s + 2}px;height:${s + 2}px"></i></button>`).join('')}` : '') +
-      `<span class="div"></span><button data-undo title="Desfazer (Ctrl+Z)">${icon('undo')}</button>${selected ? `<button data-del title="Apagar seleção (Delete)">${icon('trash')}</button>` : ''}`;
+      `<span class="div"></span><button data-keep class="${keep ? 'on' : ''}" title="${keep ? 'Ferramenta presa: continua ativa depois de usar' : 'Prender a ferramenta (continua ativa depois de usar)'}" aria-pressed="${keep}">${icon('lock')}</button>` +
+      `<button data-undo title="Desfazer (Ctrl+Z)">${icon('undo')}</button>${selected.size ? `<button data-del title="${selected.size > 1 ? `Apagar ${selected.size} itens` : 'Apagar seleção'} (Delete)">${icon('trash')}</button>` : ''}`;
   };
   $('#bdTools').addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest<HTMLElement>('button');
     if (!b) return;
-    if (b.dataset.tool) { tool = b.dataset.tool as Tool; selected = null; }
+    if (b.dataset.tool) { tool = b.dataset.tool as Tool; selected.clear(); }
+    if (b.dataset.keep !== undefined) keep = !keep;
     if (b.dataset.color) { if (tool === 'sticky') paper = b.dataset.color; else ink = b.dataset.color; recolorSelected(b.dataset.color); }
     if (b.dataset.size) size = Number(b.dataset.size);
     if (b.dataset.undo !== undefined) doUndo();
@@ -134,11 +139,16 @@ export function openBoard(app: OfficeApp, boardId: string) {
 
   const renderSide = () => {
     const side = $('#bdSide');
-    side.innerHTML = `<div class="dh"><div><b>Cópias e quadros</b><small>Recuperar uma cópia abre um quadro novo, sem apagar o atual</small></div><button class="iconbtn" id="bdSideX" aria-label="Fechar">${icon('x')}</button></div>
-      <h4>Cópias deste quadro</h4><div class="list">${copies.map((c) => `<div class="li"><span class="lic">${icon('copy')}</span><div><b>${esc(c.name)}</b><small>${esc(c.createdBy)} · ${ago(c.createdAt)}</small></div><button class="btn soft" data-restore="${c.id}">Abrir</button></div>`).join('') || '<p class="empty">Nenhuma cópia salva.</p>'}</div>
+    side.innerHTML = `<div class="dh"><div><b>Cópias e quadros</b><small>“Pôr no quadro” traz a cópia de volta para este quadro e guarda o que está nele agora como cópia. “Abrir à parte” abre a cópia num quadro novo.</small></div><button class="iconbtn" id="bdSideX" aria-label="Fechar">${icon('x')}</button></div>
+      <h4>Cópias deste quadro</h4><div class="list">${copies.map((c) => `<div class="li copy"><span class="lic">${icon('copy')}</span><div><b>${esc(c.name)}</b><small>${esc(c.createdBy)} · ${ago(c.createdAt)}</small><span class="row"><button class="btn primary" data-wall="${c.id}">Pôr no quadro</button><button class="btn soft" data-restore="${c.id}">Abrir à parte</button></span></div></div>`).join('') || '<p class="empty">Nenhuma cópia salva.</p>'}</div>
       <h4>Outros quadros</h4><div class="list">${boards.filter((b) => b.id !== id).map((b) => `<div class="li"><span class="lic">${icon('board')}</span><div><b>${esc(b.title)}</b><small>${b.updatedBy ? `${esc(b.updatedBy)} · ` : ''}${ago(b.updatedAt)}</small></div><button class="btn soft" data-open="${esc(b.id)}">Abrir</button></div>`).join('') || '<p class="empty">Nenhum outro quadro.</p>'}</div>`;
     side.querySelector('#bdSideX')!.addEventListener('click', () => (side.hidden = true));
-    side.querySelectorAll<HTMLElement>('[data-restore]').forEach((b) => b.addEventListener('click', () => { switchTo(null); app.send({ t: 'boardRestore', copyId: Number(b.dataset.restore) }); side.hidden = true; }));
+    side.querySelectorAll<HTMLElement>('[data-restore]').forEach((b) => b.addEventListener('click', () => { switchTo(null); app.send({ t: 'boardRestore', copyId: Number(b.dataset.restore), mode: 'new' }); side.hidden = true; }));
+    side.querySelectorAll<HTMLElement>('[data-wall]').forEach((b) => b.addEventListener('click', () => {
+      app.send({ t: 'boardRestore', copyId: Number(b.dataset.wall), mode: 'wall' });
+      app.notify.toast('A cópia voltou para o quadro. O que estava nele ficou guardado como cópia.', { log: false });
+      side.hidden = true;
+    }));
     side.querySelectorAll<HTMLElement>('[data-open]').forEach((b) => b.addEventListener('click', () => { switchTo(b.dataset.open!); side.hidden = true; }));
   };
   const switchTo = (next: string | null) => {
@@ -148,12 +158,24 @@ export function openBoard(app: OfficeApp, boardId: string) {
     if (next) { id = next; app.send({ t: 'boardOpen', id }); }
   };
 
+  // nome da cópia num campo próprio (o prompt() do navegador destoava e travava a página)
+  const copyForm = $<HTMLFormElement>('#bdCopyForm');
+  const copyName = $<HTMLInputElement>('#bdCopyName');
   $('#bdCopy').addEventListener('click', () => {
-    const name = prompt('Nome da cópia', `${title} · ${new Date().toLocaleDateString('pt-BR')}`);
-    if (name === null) return;
-    app.send({ t: 'boardCopy', id, name });
-    app.notify.toast('Cópia salva. Ela fica em “Cópias e quadros”.');
+    copyForm.hidden = !copyForm.hidden;
+    if (copyForm.hidden) return;
+    copyName.value = `${title} · ${new Date().toLocaleDateString('pt-BR')}`;
+    copyName.focus();
+    copyName.select();
   });
+  $('#bdCopyNo').addEventListener('click', () => (copyForm.hidden = true));
+  copyForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    app.send({ t: 'boardCopy', id, name: copyName.value.trim() });
+    copyForm.hidden = true;
+    app.notify.toast('Cópia salva. Ela fica em “Cópias e quadros”.', { log: false });
+  });
+  copyName.addEventListener('keydown', (e) => { if (e.key === 'Escape') { copyForm.hidden = true; e.stopPropagation(); } });
   $('#bdSaved').addEventListener('click', () => { const s = $('#bdSide'); s.hidden = !s.hidden; if (!s.hidden) renderSide(); });
   $('#bdPng').addEventListener('click', () => {
     const c = document.createElement('canvas');
@@ -234,22 +256,31 @@ export function openBoard(app: OfficeApp, boardId: string) {
   const topZ = () => Math.max(0, ...[...els.values()].map((e) => e.z)) + 1;
 
   // ---------- edição ----------
+  const picked = () => [...selected].map((s) => els.get(s)).filter((e): e is BoardElement => !!e);
   const recolorSelected = (c: string) => {
-    const e = selected ? els.get(selected) : null;
-    if (!e) return;
-    const prev = { ...e };
-    const next = { ...e, color: c };
-    els.set(e.id, next);
-    send([next], [], true, [prev]);
+    const list = picked();
+    if (!list.length) return;
+    const next = list.map((e) => ({ ...e, color: c }));
+    next.forEach((e) => els.set(e.id, e));
+    send(next, [], true, list.map((e) => ({ ...e })));
   };
   const deleteSelected = () => {
-    const e = selected ? els.get(selected) : null;
-    if (!e) return;
-    removed.set(e.id, e);
-    els.delete(e.id);
-    selected = null;
-    send([], [e.id]);
+    const list = picked();
+    if (!list.length) return;
+    for (const e of list) { removed.set(e.id, e); els.delete(e.id); }
+    selected.clear();
+    send([], list.map((e) => e.id));
     renderTools();
+  };
+  /** Formas e post-its se redimensionam pelas quatro quinas. */
+  const resizable = (e: BoardElement) => e.kind === 'sticky' || e.kind === 'rect' || e.kind === 'ellipse';
+  const handleAt = (x: number, y: number) => {
+    const list = picked();
+    if (list.length !== 1 || !resizable(list[0])) return null;
+    const b = bounds(list[0]), tol = 9 / view.s;
+    const corners: [number, number, number, number][] = [[b.x1, b.y1, b.x2, b.y2], [b.x2, b.y1, b.x1, b.y2], [b.x1, b.y2, b.x2, b.y1], [b.x2, b.y2, b.x1, b.y1]];
+    const c = corners.find(([cx, cy]) => Math.abs(x - cx) < tol && Math.abs(y - cy) < tol);
+    return c ? { e: list[0], fx: c[2], fy: c[3] } : null;
   };
   const doUndo = () => {
     const op = undo.pop();
@@ -288,7 +319,11 @@ export function openBoard(app: OfficeApp, boardId: string) {
   };
 
   // ---------- ponteiro ----------
-  let drag: null | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number } | { kind: 'move'; e: BoardElement; prev: BoardElement; ox: number; oy: number } | { kind: 'draw'; e: BoardElement; ox: number; oy: number } | { kind: 'erase' } = null;
+  let drag: null | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
+    | { kind: 'move'; items: BoardElement[]; prev: BoardElement[]; sx: number; sy: number }
+    | { kind: 'resize'; e: BoardElement; prev: BoardElement; fx: number; fy: number }
+    | { kind: 'marquee'; x1: number; y1: number; x2: number; y2: number; add: boolean }
+    | { kind: 'draw'; e: BoardElement; ox: number; oy: number } | { kind: 'erase' } = null;
   let space = false;
   let lastLive = 0, lastCursor = 0;
 
@@ -302,11 +337,26 @@ export function openBoard(app: OfficeApp, boardId: string) {
     const p = toBoard(ev.clientX, ev.clientY);
     if (tool === 'hand' || space || ev.button === 1) { drag = { kind: 'pan', sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y }; return; }
     if (tool === 'select') {
-      const e = hitTest(p.x, p.y);
-      selected = e?.id ?? null;
-      renderTools();
-      if (e) drag = { kind: 'move', e, prev: { ...e }, ox: p.x - e.x, oy: p.y - e.y };
       dirty = true;
+      const h = handleAt(p.x, p.y);
+      if (h) { drag = { kind: 'resize', e: h.e, prev: { ...h.e }, fx: h.fx, fy: h.fy }; return; }
+      const e = hitTest(p.x, p.y);
+      if (ev.shiftKey && e) {
+        if (selected.has(e.id)) selected.delete(e.id); else selected.add(e.id);
+        renderTools();
+        return;
+      }
+      if (!e) {
+        // arrastar no vazio seleciona tudo o que ficar dentro do retângulo
+        if (!ev.shiftKey) selected.clear();
+        drag = { kind: 'marquee', x1: p.x, y1: p.y, x2: p.x, y2: p.y, add: ev.shiftKey };
+        renderTools();
+        return;
+      }
+      if (!selected.has(e.id)) selected = new Set([e.id]);
+      const items = picked();
+      drag = { kind: 'move', items, prev: items.map((x) => ({ ...x })), sx: p.x, sy: p.y };
+      renderTools();
       return;
     }
     if (tool === 'eraser') {
@@ -322,8 +372,8 @@ export function openBoard(app: OfficeApp, boardId: string) {
       els.set(e.id, e);
       send([e]);
       editText(e);
-      tool = 'select';
-      selected = e.id;
+      if (!keep) tool = 'select';
+      selected = new Set([e.id]);
       renderTools();
       return;
     }
@@ -344,8 +394,16 @@ export function openBoard(app: OfficeApp, boardId: string) {
       if (e) { removed.set(e.id, e); els.delete(e.id); send([], [e.id]); }
       return;
     }
+    if (drag.kind === 'marquee') { drag.x2 = p.x; drag.y2 = p.y; return; }
     if (drag.kind === 'move') {
-      const e = { ...drag.e, x: p.x - drag.ox, y: p.y - drag.oy };
+      const dx = p.x - drag.sx, dy = p.y - drag.sy;
+      drag.items = drag.prev.map((e) => ({ ...e, x: e.x + dx, y: e.y + dy }));
+      drag.items.forEach((e) => els.set(e.id, e));
+    } else if (drag.kind === 'resize') {
+      // a quina oposta fica parada; o tamanho tem um mínimo para não sumir
+      const min = drag.e.kind === 'sticky' ? 60 : 8;
+      const x1 = Math.min(drag.fx, p.x), x2 = Math.max(drag.fx, p.x), y1 = Math.min(drag.fy, p.y), y2 = Math.max(drag.fy, p.y);
+      const e = { ...drag.e, x: x1, y: y1, w: Math.max(min, x2 - x1), h: Math.max(min, y2 - y1) };
       drag.e = e;
       els.set(e.id, e);
     } else {
@@ -355,11 +413,22 @@ export function openBoard(app: OfficeApp, boardId: string) {
       else { e.w = p.x - drag.ox; e.h = p.y - drag.oy; }
     }
     // mostra o traço aos outros enquanto ele é feito
-    if (t - lastLive > 120) { lastLive = t; app.send({ t: 'boardOp', id, put: [drag.e] }); }
+    if (t - lastLive > 120) { lastLive = t; app.send({ t: 'boardOp', id, put: drag.kind === 'move' ? drag.items : [drag.e] }); }
   });
   const up = () => {
     if (!drag) return;
-    if (drag.kind === 'move') { if (drag.e.x !== drag.prev.x || drag.e.y !== drag.prev.y) send([drag.e], [], true, [drag.prev]); }
+    if (drag.kind === 'move') { const d = drag; if (d.items.some((e, i) => e.x !== d.prev[i].x || e.y !== d.prev[i].y)) send(d.items, [], true, d.prev); }
+    else if (drag.kind === 'resize') send([drag.e], [], true, [drag.prev]);
+    else if (drag.kind === 'marquee') {
+      const x1 = Math.min(drag.x1, drag.x2), x2 = Math.max(drag.x1, drag.x2), y1 = Math.min(drag.y1, drag.y2), y2 = Math.max(drag.y1, drag.y2);
+      if (x2 - x1 > 3 / view.s || y2 - y1 > 3 / view.s) {
+        for (const e of els.values()) {
+          const b = bounds(e);
+          if (b.x1 >= x1 && b.x2 <= x2 && b.y1 >= y1 && b.y2 <= y2) selected.add(e.id);
+        }
+      }
+      renderTools();
+    }
     else if (drag.kind === 'draw') {
       const e = drag.e;
       // retângulos e elipses sempre com largura e altura positivas
@@ -394,9 +463,15 @@ export function openBoard(app: OfficeApp, boardId: string) {
     if (ev.key === ' ') { space = true; ev.preventDefault(); return; }
     if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); doUndo(); return; }
     if (ev.key === 'Delete' || ev.key === 'Backspace') { deleteSelected(); return; }
-    if (ev.key === 'Escape') { if (selected) { selected = null; renderTools(); dirty = true; } else close(); return; }
+    // Esc só desfaz a seleção; o quadro fecha pelo botão Fechar
+    if (ev.key === 'Escape') { if (selected.size) { selected.clear(); renderTools(); dirty = true; } return; }
+    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'a') { ev.preventDefault(); selected = new Set(els.keys()); tool = 'select'; renderTools(); dirty = true; return; }
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    // microfone e câmera continuam no teclado com o quadro aberto
+    if (ev.key.toLowerCase() === 'm') { void app.toggleMic(); return; }
+    if (ev.key.toLowerCase() === 'v') { void app.toggleCam(); return; }
     const t = TOOLS.find(([, , , k]) => k.toLowerCase() === ev.key.toLowerCase());
-    if (t && !ev.ctrlKey && !ev.metaKey) { tool = t[0]; selected = null; renderTools(); }
+    if (t) { tool = t[0]; selected.clear(); renderTools(); }
   };
   addEventListener('keydown', onKey);
   const onKeyUp = (ev: KeyboardEvent) => { if (ev.key === ' ') space = false; };
@@ -437,14 +512,26 @@ export function openBoard(app: OfficeApp, boardId: string) {
     g.translate(view.x, view.y);
     g.scale(view.s, view.s);
     drawElements(g, [...els.values()].sort((a, b) => a.z - b.z));
-    const s = selected ? els.get(selected) : null;
-    if (s) {
-      const b = bounds(s);
-      g.strokeStyle = '#3b5bdb';
-      g.lineWidth = 1.5 / view.s;
+    const sel = picked();
+    g.strokeStyle = '#3b5bdb';
+    g.lineWidth = 1.5 / view.s;
+    for (const e of sel) {
+      const b = bounds(e);
       g.setLineDash([6 / view.s, 4 / view.s]);
       g.strokeRect(b.x1 - 6 / view.s, b.y1 - 6 / view.s, b.x2 - b.x1 + 12 / view.s, b.y2 - b.y1 + 12 / view.s);
       g.setLineDash([]);
+    }
+    // alças de redimensionar nas quinas, quando há um item só selecionado
+    if (sel.length === 1 && resizable(sel[0])) {
+      const b = bounds(sel[0]), r = 5 / view.s;
+      g.fillStyle = '#ffffff';
+      for (const [x, y] of [[b.x1, b.y1], [b.x2, b.y1], [b.x1, b.y2], [b.x2, b.y2]]) { g.fillRect(x - r, y - r, r * 2, r * 2); g.strokeRect(x - r, y - r, r * 2, r * 2); }
+    }
+    if (drag?.kind === 'marquee') {
+      g.fillStyle = 'rgba(59,91,219,0.08)';
+      const x = Math.min(drag.x1, drag.x2), y = Math.min(drag.y1, drag.y2), w = Math.abs(drag.x2 - drag.x1), h = Math.abs(drag.y2 - drag.y1);
+      g.fillRect(x, y, w, h);
+      g.strokeRect(x, y, w, h);
     }
     g.restore();
     // cursor de cada pessoa com o rosto do avatar dela e o nome

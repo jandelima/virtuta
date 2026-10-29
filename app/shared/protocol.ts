@@ -28,6 +28,8 @@ export interface Presence {
   unstable: boolean;
   /** Visitante ainda não admitido. */
   waiting: boolean;
+  /** Mão levantada: fica até a pessoa baixar. */
+  hand: boolean;
 }
 
 export interface Conv {
@@ -55,7 +57,7 @@ export interface BoardElement {
 export interface BoardSummary { id: string; title: string; scope: string; updatedAt: number; updatedBy: string }
 export interface BoardCopy { id: number; boardId: string; name: string; createdAt: number; createdBy: string }
 
-export interface RadioItem { id: number; videoId: string; title: string; addedBy: string }
+export interface RadioItem { id: number; videoId: string; title: string; addedBy: string; addedById?: string }
 export interface RadioState { queue: RadioItem[]; current: RadioItem | null; startedAt: number; listeners: string[] }
 
 export interface FocusBlock { kind: 'foco' | 'pausa'; minutes: number }
@@ -91,21 +93,27 @@ export type ClientMsg =
   | { t: 'doorReply'; who: string; accept: boolean }
   | { t: 'note'; to: string; text: string }
   | { t: 'noteRead'; id: number }
+  | { t: 'noteReadAll' }
+  | { t: 'noteDelete'; id: number }
   | { t: 'boardOpen'; id: string }
   | { t: 'boardClose'; id: string }
   | { t: 'boardOp'; id: string; put?: BoardElement[]; del?: string[] }
   | { t: 'boardCursor'; id: string; x: number; y: number }
   | { t: 'boardCopy'; id: string; name: string }
-  | { t: 'boardRestore'; copyId: number }
+  /** `wall`: a cópia volta para o próprio quadro (o conteúdo atual vira cópia); `new`: abre num quadro novo. */
+  | { t: 'boardRestore'; copyId: number; mode: 'wall' | 'new' }
   | { t: 'radioJoin' }
   | { t: 'radioLeave' }
   | { t: 'radioAdd'; url: string }
   | { t: 'radioSkip'; itemId: number }
   | { t: 'radioEnded'; itemId: number }
   | { t: 'radioError'; itemId: number }
+  | { t: 'radioRemove'; itemId: number }
   | { t: 'focusStart'; blocks: FocusBlock[] }
   | { t: 'focusJoin' }
   | { t: 'focusLeave' }
+  | { t: 'focusEnd' }
+  | { t: 'hand'; up: boolean }
   | { t: 'gameJoin' }
   | { t: 'gameMove'; cell: number }
   | { t: 'gameLeave' }
@@ -145,6 +153,8 @@ export type ServerMsg =
   | { t: 'door'; open: boolean; by: string }
   | { t: 'doorKnock'; who: string }
   | { t: 'doorReply'; accept: boolean }
+  /** Um pedido para entrar na reunião foi respondido: some da tela de quem está dentro. */
+  | { t: 'doorResolved'; who: string; accept: boolean; by: string }
   | { t: 'note'; note: Note }
   | { t: 'noteCounts'; counts: Record<string, number> }
   | { t: 'board'; id: string; title: string; elements: BoardElement[]; copies: BoardCopy[]; editors: string[] }

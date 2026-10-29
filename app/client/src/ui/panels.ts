@@ -1,6 +1,6 @@
 import type { OfficeApp } from '../app';
 import { REUNIAO, inside } from '../../../shared/layout';
-import type { FocusBlock, Suggestion, SuggestionKind } from '../../../shared/protocol';
+import type { FocusBlock, RadioItem, Suggestion, SuggestionKind } from '../../../shared/protocol';
 import { STATUS_COLOR } from '../people';
 import { icon } from './icons';
 import { ago, esc } from './dom';
@@ -55,11 +55,24 @@ export class Panels {
     fn?.();
   }
 
-  /** Atualiza o painel aberto quando o estado dele muda no servidor. */
+  /**
+   * Atualiza o painel aberto quando o estado dele muda no servidor, sem perder o que a pessoa
+   * está digitando: os campos voltam com o texto, o foco e a posição do cursor.
+   */
   refresh(kind: Kind) {
     if (this.kind !== kind || this.d.hidden) return;
+    const fields = [...this.d.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input[id], textarea[id]')].map((f) => ({ id: f.id, value: f.value, focus: document.activeElement === f, a: f.selectionStart, b: f.selectionEnd }));
+    const scroll = this.d.querySelector('.db2')?.scrollTop ?? 0;
     if (kind === 'pessoa') this.openPerson(String(this.arg));
     else this.open(kind);
+    for (const f of fields) {
+      const el = this.d.querySelector<HTMLInputElement | HTMLTextAreaElement>(`#${f.id}`);
+      if (!el || el.type === 'checkbox' || el.type === 'range') continue;
+      el.value = f.value;
+      if (f.focus) { el.focus(); try { el.setSelectionRange(f.a, f.b); } catch { /* campo sem cursor */ } }
+    }
+    const body = this.d.querySelector('.db2');
+    if (body) body.scrollTop = scroll;
   }
 
   open(kind: string) {
@@ -75,29 +88,36 @@ export class Panels {
     const app = this.app;
     const u = app.users.get(id);
     if (!u) return;
-    const s = app.displayStatus(id);
+    const online = app.presence.has(id);
+    const s = online ? app.displayStatus(id) : 'afk';
     const member = !app.guest && u.role !== 'guest';
     const busy = s === 'foco' || s === 'afk';
-    this.show(`${head('user', u.name, app.statusLine(id))}
+    const first = esc(u.name.split(' ')[0]);
+    const hand = online && app.presence.get(id)?.hand;
+    // o cabeçalho já traz nome e situação; o retrato ganha só o que o cabeçalho não diz
+    this.show(`<div class="dh"><span class="av" style="width:40px;height:40px">${app.shell.avatarImg(id, 40)}<i class="sdot" style="background:${online ? STATUS_COLOR[s] : 'transparent'};${online ? '' : 'box-shadow: inset 0 0 0 2px var(--mut)'}"></i></span><div><b>${esc(u.name)}</b><small>${esc(app.statusLine(id))}</small></div>${u.role === 'guest' ? '<span class="chip">Visitante</span>' : ''}${hand ? '<span class="chip open">✋ Mão levantada</span>' : ''}<button class="iconbtn" data-close aria-label="Fechar">${icon('x')}</button></div>
       <div class="db2">
-        <div class="person"><span class="av" style="width:56px;height:56px">${app.shell.avatarImg(id, 56)}<i class="sdot" style="background:${STATUS_COLOR[s]}"></i></span><div><b>${esc(u.name)}</b><small>${esc(app.statusLine(id))}</small>${u.role === 'guest' ? '<span class="chip">Visitante</span>' : ''}</div></div>
-        ${busy ? `<p class="hint-box">${icon(s === 'foco' ? 'focus' : 'coffee')}${s === 'foco' ? 'Em foco: o pedido chega de forma discreta e pode ser recusado.' : 'Ausente no momento.'}</p>` : ''}
-        <h4>Posso falar?</h4>
-        <textarea id="knockText" maxlength="120" placeholder="Assunto (opcional)"></textarea>
-        <div class="row"><button class="btn primary" id="knock">${icon('hand')}Pedir para falar</button><button class="btn soft" id="goto">${icon('locate')}Ir até ${esc(u.name.split(' ')[0])}</button></div>
-        ${member ? `<h4>Bilhete na mesa</h4><p class="muted">Fica guardado na mesa, mesmo se a pessoa estiver offline.</p><textarea id="noteText" maxlength="600" placeholder="Escreva um bilhete para ${esc(u.name.split(' ')[0])}"></textarea><button class="btn soft" id="sendNote">${icon('note')}Deixar bilhete</button>` : ''}
+        ${online && busy ? `<p class="hint-box">${icon(s === 'foco' ? 'focus' : 'coffee')}${s === 'foco' ? 'Em foco: o pedido chega sem som e pode ser recusado.' : 'Ausente no momento.'}</p>` : ''}
+        ${online ? `<h4>Posso falar?</h4>
+        <div class="form inline"><input id="knockText" maxlength="120" placeholder="Assunto (opcional)"/><button class="btn primary" id="knock">${icon('hand')}Pedir para falar</button></div>
+        <button class="btn soft wide" id="goto">${icon('locate')}Ir até ${first}</button>` : `<p class="hint-box">${icon('note')}${first} está offline. Um bilhete na mesa fica guardado até a volta.</p>`}
+        ${member ? `<h4>Bilhete na mesa</h4>${online ? '<p class="muted">Fica guardado na mesa, mesmo se a pessoa sair.</p>' : ''}<textarea id="noteText" maxlength="600" placeholder="Escreva um bilhete para ${first}"></textarea><button class="btn ${online ? 'soft' : 'primary'}" id="sendNote">${icon('note')}Deixar bilhete</button>` : ''}
       </div>`, (d) => {
-      d.querySelector('#knock')!.addEventListener('click', () => {
-        app.send({ t: 'knock', to: id, text: (d.querySelector('#knockText') as HTMLTextAreaElement).value.trim() });
-        app.notify.toast(`Pedido enviado para ${u.name}.`);
+      const knock = () => {
+        app.send({ t: 'knock', to: id, text: d.querySelector<HTMLInputElement>('#knockText')!.value.trim() });
+        app.notify.toast(`Pedido enviado para ${u.name}.`, { log: false });
         this.close();
-      });
-      d.querySelector('#goto')!.addEventListener('click', () => {
+      };
+      d.querySelector('#knock')?.addEventListener('click', knock);
+      d.querySelector('#knockText')?.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') knock(); });
+      d.querySelector('#goto')?.addEventListener('click', () => {
         const p = app.presence.get(id);
         if (p) app.walkTo(p.x + 0.7, p.z + 0.4);
         this.close();
       });
       d.querySelector('#sendNote')?.addEventListener('click', () => this.sendNote(id, d));
+      // a caixa da ação principal já recebe o cursor
+      d.querySelector<HTMLElement>(online ? '#knockText' : '#noteText')?.focus();
     }, 'pessoa', id);
   }
 
@@ -106,7 +126,7 @@ export class Panels {
     const text = t?.value.trim();
     if (!text) return t?.focus();
     this.app.send({ t: 'note', to, text });
-    this.app.notify.toast(`Bilhete deixado na mesa de ${this.app.name(to)}.`);
+    this.app.notify.toast(`Bilhete deixado na mesa de ${this.app.name(to)}.`, { log: false });
     this.close();
   }
 
@@ -125,23 +145,42 @@ export class Panels {
         <h4>Deixar bilhete</h4>
         <textarea id="noteText" maxlength="600" placeholder="Escreva um bilhete para ${esc(owner.name.split(' ')[0])}"></textarea>
         <button class="btn primary" id="sendNote">${icon('note')}Deixar bilhete na mesa</button>
-      </div>`, (d) => d.querySelector('#sendNote')!.addEventListener('click', () => this.sendNote(owner.id, d)), 'mesa', index);
+      </div>`, (d) => {
+      d.querySelector('#sendNote')!.addEventListener('click', () => this.sendNote(owner.id, d));
+      d.querySelector<HTMLElement>('#noteText')!.focus();
+    }, 'mesa', index);
   }
 
   openMyNotes() {
     const app = this.app;
     const notes = app.notes;
-    this.show(`${head('note', 'Bilhetes na sua mesa', notes.length ? `${notes.filter((n) => !n.readAt).length} não lidos` : 'Nenhum bilhete')}
-      <div class="db2"><div class="notes">${notes.length ? notes.map((n) => `<div class="note${n.readAt ? ' read' : ''}" data-id="${n.id}"><p>${esc(n.text)}</p><small>${esc(n.fromName)} · ${ago(n.createdAt)}</small><div class="row">${n.readAt ? '' : `<button class="btn soft" data-read="${n.id}">${icon('check')}Marcar como lido</button>`}${app.users.has(n.from) ? `<button class="btn soft" data-reply="${n.from}">${icon('send')}Responder</button>` : ''}</div></div>`).join('') : '<p class="empty">Quando alguém deixar um bilhete na sua mesa, ele aparece aqui.</p>'}</div></div>`, (d) => {
+    const unread = notes.filter((n) => !n.readAt).length;
+    // quem abriu os bilhetes já viu o aviso de bilhete novo
+    app.notify.dismiss('note-', true);
+    const sub = !notes.length ? 'Nenhum bilhete' : unread ? (unread === 1 ? '1 não lido' : `${unread} não lidos`) : 'Todos lidos';
+    this.show(`${head('note', 'Bilhetes na sua mesa', sub)}
+      <div class="db2">${unread > 1 ? `<button class="btn soft" id="readAll">${icon('check')}Marcar todos como lidos</button>` : ''}<div class="notes">${notes.length ? notes.map((n) => `<div class="note${n.readAt ? ' read' : ''}" data-id="${n.id}"><p>${esc(n.text)}</p><small>${esc(n.fromName)} · ${ago(n.createdAt)}</small><div class="row">${n.readAt ? `<button class="btn soft" data-del="${n.id}">${icon('trash')}Apagar</button>` : `<button class="btn soft" data-read="${n.id}">${icon('check')}Lido</button>`}${app.users.has(n.from) ? `<button class="btn soft" data-reply="${n.from}">${icon('send')}Responder</button>` : ''}</div></div>`).join('') : '<p class="empty">Quando alguém deixar um bilhete na sua mesa, ele aparece aqui.</p>'}</div></div>`, (d) => {
+      const done = () => { app.shell.renderMe(); this.openMyNotes(); };
       d.querySelectorAll<HTMLElement>('[data-read]').forEach((b) => b.addEventListener('click', () => {
         const id = Number(b.dataset.read);
         app.send({ t: 'noteRead', id });
         const n = app.notes.find((x) => x.id === id);
         if (n) n.readAt = Date.now();
-        app.shell.renderMe();
-        this.openMyNotes();
+        done();
       }));
-      d.querySelectorAll<HTMLElement>('[data-reply]').forEach((b) => b.addEventListener('click', () => this.openDesk(app.users.get(b.dataset.reply!)!.desk ?? -1)));
+      d.querySelector('#readAll')?.addEventListener('click', () => {
+        app.send({ t: 'noteReadAll' });
+        for (const n of app.notes) n.readAt ??= Date.now();
+        done();
+      });
+      d.querySelectorAll<HTMLElement>('[data-del]').forEach((b) => b.addEventListener('click', () => {
+        const id = Number(b.dataset.del);
+        app.send({ t: 'noteDelete', id });
+        app.notes = app.notes.filter((x) => x.id !== id);
+        done();
+      }));
+      // responde no painel da pessoa (quem não tem mesa também recebe bilhete)
+      d.querySelectorAll<HTMLElement>('[data-reply]').forEach((b) => b.addEventListener('click', () => this.openPerson(b.dataset.reply!)));
     }, 'bilhetes');
   }
 
@@ -165,7 +204,7 @@ export class Panels {
       </div>`, (d) => {
       d.querySelector('#doorToggle')?.addEventListener('click', () => app.send({ t: 'door', open: !open }));
       d.querySelector('#doorOut')?.addEventListener('click', () => { app.travel('hub'); this.close(); });
-      d.querySelector('#doorKnock')?.addEventListener('click', () => { app.send({ t: 'doorKnock' }); app.notify.toast('Você bateu na porta. Aguarde a resposta de quem está na sala.'); this.close(); });
+      d.querySelector('#doorKnock')?.addEventListener('click', () => { app.send({ t: 'doorKnock' }); app.notify.toast('Você bateu na porta. Aguarde a resposta de quem está na sala.', { key: 'door-wait', ttl: 60000, log: false, ic: 'door' }); this.close(); });
       d.querySelector('#doorIn')?.addEventListener('click', () => { app.travel('reuniao'); this.close(); });
     }, 'porta');
   }
@@ -203,12 +242,15 @@ export class Panels {
     const app = this.app;
     const r = app.radio;
     const listening = app.radioPlayer.wanted;
+    // quem adicionou (ou a administração) pode tirar o item da programação
+    const mine = (q: RadioItem) => q.addedById === app.me || app.role === 'admin';
+    const del = (q: RadioItem) => (mine(q) ? `<button class="iconbtn sm show" data-rdel="${q.id}" aria-label="Tirar da programação" title="Tirar da programação">${icon('trash')}</button>` : '');
     this.show(`${head('radio', 'Rádio da equipe', `${r.listeners.length ? `${r.listeners.length} ${r.listeners.length === 1 ? 'pessoa ouvindo' : 'pessoas ouvindo'}` : 'Ninguém ouvindo'} · YouTube`)}
       <div class="db2">
         <h4>Tocando agora</h4>
-        <div class="list">${r.current ? `<div class="li"><span class="lic">${icon('play')}</span><div><b>${esc(r.current.title)}</b><small>Adicionado por ${esc(r.current.addedBy)}</small></div></div>` : '<p class="empty">Nada tocando. Adicione um link do YouTube.</p>'}</div>
+        <div class="list">${r.current ? `<div class="li"><span class="lic">${icon('play')}</span><div><b>${esc(r.current.title)}</b><small>Adicionado por ${esc(r.current.addedBy)}</small></div>${del(r.current)}</div>` : '<p class="empty">Nada tocando. Adicione um link do YouTube.</p>'}</div>
         <h4>Próximas</h4>
-        <div class="list">${r.queue.map((q) => `<div class="li"><span class="lic">${icon('radio')}</span><div><b>${esc(q.title)}</b><small>Adicionado por ${esc(q.addedBy)}</small></div></div>`).join('') || '<p class="empty">Fila vazia.</p>'}</div>
+        <div class="list">${r.queue.map((q) => `<div class="li"><span class="lic">${icon('radio')}</span><div><b>${esc(q.title)}</b><small>Adicionado por ${esc(q.addedBy)}</small></div>${del(q)}</div>`).join('') || '<p class="empty">Fila vazia.</p>'}</div>
         <h4>Adicionar à programação</h4>
         <div class="form"><input id="rUrl" placeholder="Link de vídeo ou transmissão do YouTube"/><button class="btn soft" id="rAdd">${icon('plus')}Adicionar</button></div>
         <p class="muted">A rádio toca dentro da sala da equipe, para quem ligou "Ouvir": todos na mesma música, no mesmo ponto, cada um com o seu volume. Ao sair da sala ela para e, ao voltar, retoma.</p>
@@ -218,6 +260,7 @@ export class Panels {
         const url = d.querySelector<HTMLInputElement>('#rUrl')!.value.trim();
         if (url) app.send({ t: 'radioAdd', url });
       });
+      d.querySelectorAll<HTMLElement>('[data-rdel]').forEach((b) => b.addEventListener('click', () => app.send({ t: 'radioRemove', itemId: Number(b.dataset.rdel) })));
       d.querySelector('#rJoin')?.addEventListener('click', () => app.radioPlayer.join());
       d.querySelector('#rLeave')?.addEventListener('click', () => app.radioPlayer.leave());
       d.querySelector('#rSkip')?.addEventListener('click', () => r.current && app.send({ t: 'radioSkip', itemId: r.current.id }));
@@ -227,7 +270,9 @@ export class Panels {
   // ---------- café ----------
   private cafe() {
     const app = this.app;
-    const free = [...app.presence.values()].filter((p) => p.id !== app.me && app.displayStatus(p.id) === 'disp' && !p.waiting).length;
+    // o mesmo critério do servidor: disponível, fora da reunião e fora de conversa
+    const talking = new Set(app.convs.flatMap((c) => c.members));
+    const free = [...app.presence.values()].filter((p) => p.id !== app.me && app.users.get(p.id)?.role !== 'guest' && app.displayStatus(p.id) === 'disp' && !p.waiting && !talking.has(p.id)).length;
     this.show(`${head('coffee', 'Café', 'Uma pausa com a equipe ou um tempo ausente')}
       <div class="db2">
         <button class="btn primary wide" id="invitePause">${icon('users')}Convidar a equipe para uma pausa</button>
@@ -237,7 +282,7 @@ export class Panels {
       </div>`, (d) => {
       d.querySelector('#invitePause')!.addEventListener('click', () => {
         app.send({ t: 'pauseInvite' });
-        app.notify.toast('Convite enviado. Sente-se enquanto o pessoal chega.');
+        app.notify.toast('Convite enviado. Sente-se enquanto o pessoal chega.', { log: false });
         app.goPause();
         this.close();
       });
@@ -265,7 +310,7 @@ export class Panels {
         app.send({ t: 'gameJoin' });
         app.sitOn(a ? 'jogo-1' : 'jogo-0');
       });
-      d.querySelector('#gLeave')?.addEventListener('click', () => app.send({ t: 'gameLeave' }));
+      d.querySelector('#gLeave')?.addEventListener('click', () => { app.send({ t: 'gameLeave' }); app.standUp(); this.close(); });
       d.querySelector('#gReset')?.addEventListener('click', () => app.send({ t: 'gameReset' }));
     }, 'jogo');
   }
@@ -284,7 +329,10 @@ export class Panels {
           <div class="faces big">${f.participants.map((id) => `<span title="${esc(app.name(id))}">${app.shell.avatarImg(id, 34)}</span>`).join('')}</div>
           <p class="muted">Durante os blocos de foco, quem participa fica protegido de conversas automáticas.</p>
         </div>
-        <div class="df"><button class="btn primary" id="fJoin">${joined ? 'Sair da sessão' : 'Participar'}</button></div>`, (d) => d.querySelector('#fJoin')!.addEventListener('click', () => app.send({ t: joined ? 'focusLeave' : 'focusJoin' })), 'foco');
+        <div class="df">${f.owner === app.me && f.participants.length > 1 ? `<button class="btn soft" id="fEnd">Encerrar para todos</button>` : ''}<button class="btn primary" id="fJoin">${joined ? 'Sair da sessão' : 'Participar'}</button></div>`, (d) => {
+        d.querySelector('#fJoin')!.addEventListener('click', () => { if (joined) app.focusLeave(); else app.focusJoin(); });
+        d.querySelector('#fEnd')?.addEventListener('click', () => { app.focusEnd(); this.close(); });
+      }, 'foco');
     }
     const presets: [string, FocusBlock[]][] = [
       ['Pomodoro · 4 × 25 min com pausas de 5', [...Array(4)].flatMap((_, i) => [{ kind: 'foco', minutes: 25 }, ...(i < 3 ? [{ kind: 'pausa', minutes: 5 }] : [])] as FocusBlock[])],

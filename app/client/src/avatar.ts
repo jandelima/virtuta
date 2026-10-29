@@ -125,12 +125,13 @@ export class Avatar {
     const mic = this.inCall ? icon(this.micOn ? 'mic' : 'micOff', this.micOn ? 'mic on' : 'mic') : '';
     const weak = p.unstable ? icon('wifiOff', 'st weak') : '';
     this.labelEl.className = `tag${p.me ? ' me' : ''}${this.speaking ? ' speaking' : ''}${p.guest ? ' guest' : ''}${p.unstable ? ' unstable' : ''}`;
-    this.labelEl.innerHTML = `<i class="dot" style="background:${STATUS_COLOR[p.status]}"></i><b>${esc(p.short)}${p.me ? ' (você)' : ''}</b>${extra}${weak}${mic}`;
+    const hand = p.hand ? '<span class="hand" title="Mão levantada">✋</span>' : '';
+    this.labelEl.innerHTML = `<i class="dot" style="background:${STATUS_COLOR[p.status]}"></i><b>${esc(p.short)}${p.me ? ' (você)' : ''}</b>${hand}${extra}${weak}${mic}`;
   }
 
   /** Rótulo compacto: só a bolinha de status, sem o nome. */
   setCompact(compact: boolean) {
-    this.labelEl.classList.toggle('compact', compact && !this.person.me);
+    this.labelEl.classList.toggle('compact', compact && !this.person.me && !this.person.hand);
   }
 
   setActive(active: boolean) {
@@ -180,6 +181,16 @@ export class Avatar {
     this.root.position.set(seat.x, seat.y, seat.z);
     this.root.rotation.y = this.targetRot = seat.rot;
     this.play('sit', 0.3);
+  }
+
+  /** Sai da cadeira andando até o ponto de acesso dela. */
+  leaveSeat(nav: NavGrid) {
+    if (!this.seat) return;
+    const a = seatAccess(nav, this.seat);
+    this.standUp();
+    this.path = [new THREE.Vector3(a.x, 0, a.z)];
+    this.onArrive = undefined;
+    this.play('walk');
   }
 
   /** Anda até o ponto de acesso da cadeira, entra nela e senta, sem teletransporte. */

@@ -18,6 +18,8 @@ export interface Person {
   /** Conexão instável: o servidor aguarda a volta da pessoa. */
   unstable?: boolean;
   look?: StoredLook | null;
+  /** Mão levantada. */
+  hand?: boolean;
 }
 
 export const STATUS_COLOR: Record<Status, string> = {

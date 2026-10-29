@@ -130,6 +130,11 @@ export class Scene3D {
   /** Volta ao zoom de sempre (depois de o zoom ter sido mudado à mão). */
   reframe() { if (this.space && !this.side) { this.zoom = this.baseZoom(); this.wake(); } }
 
+  /** Se a vista mostra o ambiente inteiro agora. */
+  isWhole() { return !!this.space && !this.side && Math.abs(this.zoom - this.fitZoom(this.space.rect)) < 0.01; }
+  /** No hub o zoom de sempre já mostra tudo: não há outra vista para alternar. */
+  canWhole() { return !!this.space && !this.side && Math.abs(this.fitZoom(this.space.rect) - this.baseZoom()) > 0.02; }
+
   /** Alterna entre o ambiente inteiro na tela e o zoom de sempre. */
   toggleWhole() {
     if (!this.space || this.side) return;

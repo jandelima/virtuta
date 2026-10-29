@@ -48,9 +48,47 @@ export class ConvView {
     return el;
   }
 
+  /** Chave do que aparece na conversa, sem quem está falando: se não mudou, só o destaque de fala muda. */
+  private shape() {
+    const app = this.app;
+    const c = app.conv;
+    if (!c) return '';
+    const m = app.media;
+    const sid = (t: Track | null) => (t ? t.sid ?? 'x' : '');
+    return JSON.stringify([c.id, c.kind, this.stageOpen, m.mic, m.cam, m.screen, m.state, this.feeds().map((f) => [f.id, f.micOn, sid(f.camera), sid(f.screen), !!app.presence.get(f.id)?.hand])]);
+  }
+  private lastShape = '';
+
+  /** Chamado a cada mudança de mídia (várias por segundo quando muda quem fala). */
+  update() {
+    if (this.shape() !== this.lastShape) return this.render();
+    const speaking = new Set(this.feeds().filter((f) => f.speaking).map((f) => f.id));
+    for (const root of [this.panel, this.stage]) {
+      root.querySelectorAll<HTMLElement>('.tile[data-id]:not(.slide)').forEach((t) => t.classList.toggle('speaking', speaking.has(t.dataset.id!)));
+    }
+  }
+
+  /** Microfone, câmera e tela: na faixa lateral (quadro ou apresentação abertos) o dock some. */
+  private controls() {
+    const m = this.app.media;
+    const b = (id: string, ic: string, label: string, cls: string) => `<button class="cc ${cls}" data-cc="${id}" aria-label="${label}" title="${label}">${icon(ic)}</button>`;
+    return b('mic', m.mic ? 'mic' : 'micOff', m.mic ? 'Desligar microfone (M)' : 'Ligar microfone (M)', m.mic ? 'on' : '') +
+      b('cam', m.cam ? 'cam' : 'camOff', m.cam ? 'Desligar câmera (V)' : 'Ligar câmera (V)', m.cam ? 'on' : '') +
+      b('screen', 'screen', m.screen ? 'Parar de compartilhar' : 'Compartilhar tela', m.screen ? 'share' : '');
+  }
+  private bindControls(root: HTMLElement) {
+    root.querySelectorAll<HTMLElement>('[data-cc]').forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.cc;
+      if (k === 'mic') void this.app.toggleMic();
+      if (k === 'cam') void this.app.toggleCam();
+      if (k === 'screen') void this.app.toggleScreen();
+    }));
+  }
+
   render(before?: Conv | null) {
     const app = this.app;
     const c = app.conv;
+    this.lastShape = this.shape();
     if (!c) {
       this.panel.hidden = true;
       this.closeStage();
@@ -72,11 +110,12 @@ export class ConvView {
     const title = c.kind === 'room' ? 'Sala de reunião' : c.kind === 'direct' ? 'Conversa a pedido' : 'Conversa por proximidade';
     const presenting = shares.map((s) => (s.id === app.me ? 'você' : app.name(s.id))).join(' e ');
     this.panel.hidden = this.stageOpen;
-    this.panel.innerHTML = `<div class="conv-h"><span class="pulse"></span><b>${title}</b><small>${c.members.length} ${c.members.length === 1 ? 'pessoa' : 'pessoas'}${presenting ? ` · ${esc(presenting)} apresentando` : ''}</small>${shares.length ? `<button id="openStage">${icon('maximize')}Apresentação</button>` : ''}<button id="leaveConv">${c.kind === 'room' ? 'Sair da sala' : 'Sair da conversa'}</button></div><div class="tiles" id="convTiles"></div>`;
+    this.panel.innerHTML = `<div class="conv-h"><span class="pulse"></span><b>${title}</b><small>${c.members.length} ${c.members.length === 1 ? 'pessoa' : 'pessoas'}${presenting ? ` · ${esc(presenting)} apresentando` : ''}</small>${shares.length ? `<button id="openStage">${icon('maximize')}Apresentação</button>` : ''}<button id="leaveConv">${c.kind === 'room' ? 'Sair da sala' : 'Sair da conversa'}</button></div><div class="tiles" id="convTiles"></div><div class="conv-ctl">${this.controls()}</div>`;
     const tiles = this.panel.querySelector('#convTiles')!;
     for (const f of shares) tiles.appendChild(this.tile(f, true));
     for (const f of feeds) tiles.appendChild(this.tile(f, false));
     this.panel.querySelector('#leaveConv')!.addEventListener('click', () => this.leave());
+    this.bindControls(this.panel);
     this.panel.querySelector('#openStage')?.addEventListener('click', () => this.openStage());
     if (this.stageOpen) this.renderStage(feeds);
   }
@@ -86,6 +125,7 @@ export class ConvView {
     const u = app.users.get(f.id);
     const el = document.createElement('div');
     el.className = `tile${f.speaking && !screen ? ' speaking' : ''}${screen ? ' slide' : ''}`;
+    el.dataset.id = f.id;
     if (!screen) el.style.background = `linear-gradient(160deg, ${u?.color ?? '#555'}, #1d2129)`;
     const track = screen ? f.screen : f.camera;
     if (track) {
@@ -93,7 +133,8 @@ export class ConvView {
       v.className = screen ? 'vid contain' : 'vid';
       el.appendChild(v);
     } else el.insertAdjacentHTML('beforeend', `<img class="pt" src="${app.portraits[f.id] ?? ''}" alt=""/><span class="off">${icon('camOff')}</span>`);
-    const label = screen ? `${icon('screen')}${f.id === app.me ? 'Sua tela' : esc(app.shortName(f.id))}` : `${icon(f.micOn ? 'mic' : 'micOff')}${f.id === app.me ? 'Você' : esc(app.shortName(f.id))}`;
+    const hand = !screen && app.presence.get(f.id)?.hand ? ' ✋' : '';
+    const label = screen ? `${icon('screen')}${f.id === app.me ? 'Sua tela' : esc(app.shortName(f.id))}` : `${icon(f.micOn ? 'mic' : 'micOff')}${f.id === app.me ? 'Você' : esc(app.shortName(f.id))}${hand}`;
     el.insertAdjacentHTML('beforeend', `<span class="nm">${label}</span>`);
     if (screen) el.addEventListener('click', () => this.openStage());
     return el;
@@ -134,6 +175,7 @@ export class ConvView {
     const shares = feeds.filter((f) => f.screen);
     this.stage.innerHTML = `<div class="pr-h"><b>${shares.length ? 'Apresentação' : 'Conversa'}</b><small>${shares.map((s) => (s.id === app.me ? 'Sua tela' : esc(app.shortName(s.id)))).join(' · ') || 'Ninguém compartilhando a tela'}</small>
       <div class="pr-tools">${shares.length ? `<button data-tool="ptr" class="${this.tool === 'ptr' ? 'on' : ''}" title="Apontador">${icon('pointer')}</button><button data-tool="pen" class="${this.tool === 'pen' ? 'on' : ''}" title="Marcação temporária">${icon('pen')}</button>${COLORS.map((c) => `<button data-color="${c}" class="sw${this.color === c ? ' on' : ''}" style="--c:${c}" title="Cor"></button>`).join('')}` : ''}</div>
+      <div class="pr-media">${this.controls()}</div>
       <button class="btn soft" id="backMap">${icon('map')}Voltar ao mapa</button></div>
       <div class="pr-main n${Math.min(2, shares.length)}" id="prMain"></div>
       <div class="pr-strip" id="prStrip"></div>`;
@@ -154,6 +196,7 @@ export class ConvView {
     const strip = this.stage.querySelector('#prStrip')!;
     for (const f of feeds) strip.appendChild(this.tile(f, false));
     this.stage.querySelector('#backMap')!.addEventListener('click', () => this.closeStage());
+    this.bindControls(this.stage);
     this.stage.querySelectorAll<HTMLElement>('[data-tool]').forEach((b) => b.addEventListener('click', () => { this.tool = b.dataset.tool as 'ptr' | 'pen'; this.renderStage(this.feeds()); }));
     this.stage.querySelectorAll<HTMLElement>('[data-color]').forEach((b) => b.addEventListener('click', () => { this.color = b.dataset.color!; this.renderStage(this.feeds()); }));
   }

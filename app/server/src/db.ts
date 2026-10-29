@@ -147,6 +147,9 @@ export const notes = {
     return (db.prepare('SELECT * FROM notes WHERE to_user = ? ORDER BY created_at DESC LIMIT 60').all(to) as NoteRow[]).map((r) => noteOut(r, nameOf(r.from_user)));
   },
   markRead: (id: number, to: string) => db.prepare('UPDATE notes SET read_at = ? WHERE id = ? AND to_user = ? AND read_at IS NULL').run(now(), id, to),
+  markAllRead: (to: string) => db.prepare('UPDATE notes SET read_at = ? WHERE to_user = ? AND read_at IS NULL').run(now(), to),
+  /** Só quem recebeu apaga, e só bilhetes já lidos. */
+  remove: (id: number, to: string) => db.prepare('DELETE FROM notes WHERE id = ? AND to_user = ? AND read_at IS NOT NULL').run(id, to),
   unreadCounts() {
     const rows = db.prepare('SELECT to_user, COUNT(*) AS n FROM notes WHERE read_at IS NULL GROUP BY to_user').all() as { to_user: string; n: number }[];
     return Object.fromEntries(rows.map((r) => [r.to_user, r.n]));

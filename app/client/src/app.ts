@@ -76,7 +76,8 @@ export class OfficeApp {
     this.panels = new Panels(this);
     this.notify = new Notifier(this);
     this.radioPlayer = new RadioPlayer(this);
-    this.media.onChange = () => { this.convView.render(); this.shell.renderDock(); this.refreshCallLabels(); };
+    // troca de quem fala chega várias vezes por segundo: a conversa só redesenha o que mudou
+    this.media.onChange = () => { this.convView.update(); this.shell.renderDock(); this.shell.renderConnection(); this.refreshCallLabels(); };
     this.net.onMessage = (m) => this.onMessage(m);
     this.net.onState = (s) => { this.netState = s; this.shell.renderConnection(); };
   }
@@ -166,15 +167,22 @@ export class OfficeApp {
         this.sc.wake(1500);
         return;
       case 'conv': return this.setConv(m.conv);
-      case 'convs': this.convs = m.convs; this.refreshCallLabels(); return;
+      case 'convs': this.convs = m.convs; this.refreshCallLabels(); this.shell.renderPeople(); return;
       case 'react': return this.showReaction(m.from, m.emoji);
       case 'knock': return this.notify.knock(m.from, m.text);
       case 'knockReply': return this.notify.toast(m.accept ? `${this.name(m.from)} aceitou. Vocês estão em conversa.` : `${this.name(m.from)} não pode falar agora.`);
       case 'door': return this.setDoor(m.open, m.by);
       case 'doorKnock': return this.notify.doorKnock(m.who);
+      case 'doorResolved': return this.notify.doorResolved(m.who, m.accept, m.by);
       case 'doorReply':
-        if (m.accept) { this.doorAllowed = true; this.applyDoorNav(); this.notify.toast('Pode entrar na sala de reunião.'); }
-        else this.notify.toast('Agora não é possível entrar na sala de reunião.');
+        this.notify.dismiss('door-wait');
+        if (m.accept) {
+          this.doorAllowed = true;
+          this.applyDoorNav();
+          // quem bateu e ainda está no hub entra sozinho
+          if (this.here === 'hub' && !this.crossing) { this.notify.toast('Sua entrada foi autorizada. Entrando na sala de reunião…', { log: false }); this.travel('reuniao'); }
+          else this.notify.toast('Sua entrada na sala de reunião foi autorizada.');
+        } else this.notify.toast('Agora não é possível entrar na sala de reunião.');
         return;
       case 'note':
         this.notes.unshift(m.note);
@@ -192,7 +200,9 @@ export class OfficeApp {
         this.notify.focusChange(this.focus, m.focus);
         this.focus = m.focus;
         this.shell.renderFocus();
+        this.shell.renderDock();
         this.refreshAllPeople();
+        this.panels.refresh('foco');
         return;
       case 'game': this.game = m.game; this.refreshGame(); return this.panels.refresh('jogo');
       case 'pauseInvite': return this.notify.pauseInvite(m.from);
@@ -232,6 +242,7 @@ export class OfficeApp {
       document.getElementById('loading')?.classList.add('done');
       // quem chega pela primeira vez monta o próprio avatar antes de tudo
       if (!this.guest && !this.users.get(this.me)?.look) this.shell.editAvatar(true);
+      this.restoreStatusUntil();
     }
     this.refreshDesks();
     this.refreshGame();
@@ -259,6 +270,7 @@ export class OfficeApp {
       guest: u?.role === 'guest',
       unstable: p?.unstable,
       look: u?.look ?? null,
+      hand: !!p?.hand,
     };
   }
 
@@ -303,7 +315,10 @@ export class OfficeApp {
   }
 
   private upsertPresence(p: Presence, fromInit = false) {
+    const prev = this.presence.get(p.id);
     this.presence.set(p.id, p);
+    // mão levantada por alguém da mesma conversa
+    if (!fromInit && p.hand && prev && !prev.hand && p.id !== this.me && this.conv?.members.includes(p.id)) this.notify.toast(`${this.name(p.id)} levantou a mão`, { who: p.id, log: false });
     // visitante aguardando não aparece no mapa de quem está dentro
     const visible = !p.waiting || p.id === this.me;
     let a = this.avatars.get(p.id);
@@ -323,6 +338,7 @@ export class OfficeApp {
 
     if (!fromInit) this.shell.renderPeople();
     if (p.id === this.me && !fromInit) { this.shell.renderMe(); this.shell.renderDock(); }
+    if (!fromInit && prev?.hand !== p.hand) this.convView.render();
     this.sc.wake();
   }
 
@@ -355,16 +371,23 @@ export class OfficeApp {
     this.refreshCallLabels();
     this.convView.render(before);
     this.shell.renderPeople();
-    if (c && !before) this.notify.joinedConv(c);
+    this.shell.renderDock();
+    this.shell.renderConnection();
+    // alguém chegou para conversar (quem chega andando já sabe; quem estava parado é avisado)
+    if (c && c.kind === 'prox') {
+      const fresh = c.members.filter((id) => id !== this.me && !before?.members.includes(id));
+      if (fresh.length && performance.now() - this.lastWalk > 1500) this.notify.joinedConv(fresh);
+    }
   }
+  /** Quando a própria pessoa andou pela última vez (para saber quem chegou até quem). */
+  private lastWalk = -1e9;
 
   refreshCallLabels() {
     const mine = new Set(this.conv?.members ?? []);
     const feeds = this.conv ? this.media.feeds(this.conv.members, this.me) : [];
-    const inAny = new Set(this.convs.flatMap((c) => c.members));
     for (const [id, a] of this.avatars) {
       const f = feeds.find((x) => x.id === id);
-      a.inCall = inAny.has(id);
+      a.inCall = mine.has(id);
       a.micOn = mine.has(id) ? !!f?.micOn : false;
       a.speaking = !!f?.speaking;
       a.refreshLabel();
@@ -380,7 +403,8 @@ export class OfficeApp {
       if (e.key === 'Alt') e.preventDefault();
       this.keys.add(k);
       if (k === 'e') this.interactNearest();
-      if (k === 'escape') this.panels.close();
+      if (k === 'escape') { if (!this.shell.closePopups()) this.panels.close(); }
+      if (e.key === '?') this.shell.openShortcuts();
       if (k === 'm' && !e.ctrlKey && !e.metaKey) void this.toggleMic();
       if (k === 'v' && !e.ctrlKey && !e.metaKey) void this.toggleCam();
       if (k === 'k' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); (document.getElementById('search') as HTMLInputElement).focus(); }
@@ -562,7 +586,7 @@ export class OfficeApp {
     this.separate();
     this.checkDoors();
     if (this.mouseMoved) { this.mouseMoved = false; this.updateHover(); }
-    if (me.moving) this.sc.wake(1500);
+    if (me.moving) { this.sc.wake(1500); this.lastWalk = performance.now(); }
 
     // envia a própria posição no máximo 10 vezes por segundo, só quando muda
     const t = performance.now();
@@ -587,6 +611,7 @@ export class OfficeApp {
     if (t - this.slow > 1000) {
       this.slow = t;
       this.shell.everySecond();
+      this.checkStatusExpiry();
       this.radioPlayer.update();
       this.refreshTv();
     }
@@ -704,8 +729,13 @@ export class OfficeApp {
     if (hov) {
       const d = this.describe(hov.it);
       tip.innerHTML = d.title ? `<b>${esc(d.title)}</b><span>${esc(d.hint)}</span>` : `<span>${esc(d.hint)}</span>`;
-      tip.style.transform = `translate(${Math.round(this.mouse.x + 16)}px, ${Math.round(this.mouse.y + 18)}px)`;
       tip.hidden = false;
+      // perto da borda direita ou de baixo, a dica abre para o outro lado
+      const vw = this.sc.renderer.domElement.clientWidth, vh = this.sc.renderer.domElement.clientHeight;
+      const tw = tip.offsetWidth, th = tip.offsetHeight;
+      const x = this.mouse.x + 16 + tw > vw - 8 ? this.mouse.x - 12 - tw : this.mouse.x + 16;
+      const y = this.mouse.y + 18 + th > vh - 8 ? this.mouse.y - 12 - th : this.mouse.y + 18;
+      tip.style.transform = `translate(${Math.round(Math.max(4, x))}px, ${Math.round(Math.max(4, y))}px)`;
     } else tip.hidden = true;
   }
   private highlightSoft = false;
@@ -780,8 +810,9 @@ export class OfficeApp {
     const mine = new Set(this.conv?.members ?? []);
     for (const [id, a] of this.avatars) {
       if (!a.root.visible) continue;
-      const near = me ? Math.hypot(a.pos.x - me.pos.x, a.pos.z - me.pos.z) < 2.6 : false;
-      a.setCompact(!(showAll || near || mine.has(id) || id === hovered));
+      // quem está sentado mostra o nome (dá para ver quem está em cada mesa); quem anda longe vira só a bolinha
+      const near = me ? Math.hypot(a.pos.x - me.pos.x, a.pos.z - me.pos.z) < 6 : false;
+      a.setCompact(!(showAll || near || a.seat || mine.has(id) || id === hovered));
     }
   }
 
@@ -799,12 +830,31 @@ export class OfficeApp {
   private sideReasons = new Set<string>();
 
   // ---------- ações da pessoa ----------
-  setStatus(status: NetStatus, note = '') {
+  setStatus(status: NetStatus, note = '', until = 0) {
     this.send({ t: 'status', status, note });
+    this.statusUntil = note ? until : 0;
+    try { localStorage.setItem('virtuta.statusUntil', JSON.stringify({ note, until: this.statusUntil })); } catch { /* vale só nesta sessão */ }
     const p = this.myPresence;
     if (p) { p.status = status; p.note = note; }
     this.refreshAllPeople();
     this.shell.renderDock();
+  }
+
+  /** Mensagem de status com prazo: ao vencer, volta a disponível (ou só apaga a mensagem). */
+  statusUntil = 0;
+  checkStatusExpiry() {
+    const p = this.myPresence;
+    if (!this.statusUntil || !p || Date.now() < this.statusUntil) return;
+    this.statusUntil = 0;
+    if (p.status === 'afk') this.setStatus('disp');
+    else this.setStatus(p.status, '');
+  }
+  /** Retoma o prazo da mensagem depois de recarregar a página. */
+  private restoreStatusUntil() {
+    try {
+      const s = JSON.parse(localStorage.getItem('virtuta.statusUntil') ?? '{}') as { note?: string; until?: number };
+      if (s.until && s.note && s.note === this.myPresence?.note) this.statusUntil = s.until;
+    } catch { /* sem prazo salvo */ }
   }
 
   /** "Fui tomar café": vai até o café e fica ausente. */
@@ -820,22 +870,45 @@ export class OfficeApp {
     this.goToDesk();
   }
 
+  /** Foco só da pessoa (status). Dentro da sessão coletiva, o botão só mostra a sessão: sai-se pelo topo. */
   toggleFocus() {
     const p = this.myPresence;
     if (!p) return;
-    if (this.focus?.participants.includes(this.me)) return this.send({ t: 'focusLeave' });
+    if (this.focus?.participants.includes(this.me)) return this.panels.open('foco');
     if (p.status === 'foco') this.setStatus('disp');
     else this.setStatus('foco', 'Em foco');
   }
 
+  focusJoin() { this.send({ t: 'focusJoin' }); }
+  focusLeave() { this.notify.leaving = 'leave'; this.send({ t: 'focusLeave' }); }
+  focusEnd() { this.notify.leaving = 'end'; this.send({ t: 'focusEnd' }); }
+
+  raiseHand() {
+    const up = !this.myPresence?.hand;
+    const p = this.myPresence;
+    if (p) p.hand = up;
+    this.send({ t: 'hand', up });
+    this.refreshAllPeople();
+    this.shell.renderDock();
+    this.convView.render();
+  }
+
+  /** Levanta da cadeira (ex.: ao sair da mesa de jogo). */
+  standUp() {
+    const me = this.myAvatar;
+    if (me?.seat) me.leaveSeat(this.space.nav);
+  }
+
+  // sem conexão de mídia, o aviso fixo de conexão já explica e oferece "Tentar de novo"
   async toggleMic() {
-    try { await this.media.setMic(!this.media.mic); } catch (e) { this.notify.mediaError(e, 'microfone'); }
+    try { await this.media.setMic(!this.media.mic); } catch (e) { if (this.media.state !== 'failed') this.notify.mediaError(e, 'microfone'); }
   }
   async toggleCam() {
-    try { await this.media.setCam(!this.media.cam); } catch (e) { this.notify.mediaError(e, 'câmera'); }
+    try { await this.media.setCam(!this.media.cam); } catch (e) { if (this.media.state !== 'failed') this.notify.mediaError(e, 'câmera'); }
   }
   async toggleScreen() {
-    try { await this.media.setScreen(!this.media.screen); } catch (e) { if ((e as Error).name !== 'NotAllowedError') this.notify.mediaError(e, 'tela'); }
+    if (!this.conv && !this.media.screen) return this.notify.toast('Entre numa conversa para apresentar a tela.', { log: false });
+    try { await this.media.setScreen(!this.media.screen); } catch (e) { if ((e as Error).name !== 'NotAllowedError' && this.media.state !== 'failed') this.notify.mediaError(e, 'tela'); }
   }
 
   react(emoji: string) {
@@ -984,7 +1057,12 @@ export class OfficeApp {
     const s = this.displayStatus(id);
     if (s === 'visita') return 'Aguardando entrada';
     if (p.note && s !== 'reuniao') return p.note;
-    return s === 'disp' ? this.areaName(id) : `${STATUS_LABEL[s]} · ${this.areaName(id)}`;
+    if (s === 'reuniao') return STATUS_LABEL.reuniao;
+    const c = this.convs.find((x) => x.kind !== 'room' && x.members.includes(id));
+    const others = c ? c.members.filter((m) => m !== id) : [];
+    const talk = others.length ? `em conversa com ${others.length > 2 ? `${others.length} pessoas` : others.map((m) => (m === this.me ? 'você' : this.shortName(m))).join(' e ')}` : '';
+    const base = s === 'disp' ? this.areaName(id) : `${STATUS_LABEL[s]} · ${this.areaName(id)}`;
+    return talk ? `${base} · ${talk}` : base;
   }
 }
 

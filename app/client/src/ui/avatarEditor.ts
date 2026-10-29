@@ -103,6 +103,7 @@ export function openAvatarEditor(initial: Look, name: string, onSave: (look: Loo
         <div class="ae-foot"><button class="btn soft" data-random>${icon('shuffle')}Surpreenda-me</button><span></span>
           ${opts.welcome ? '' : '<button class="btn ghost" data-close>Cancelar</button>'}
           <button class="btn primary" data-save>${opts.welcome ? 'Entrar no escritório' : 'Salvar avatar'}</button></div>
+        <div class="ae-foot ae-ask" hidden><b>Descartar as alterações do avatar?</b><span></span><button class="btn ghost" data-keep>Continuar editando</button><button class="btn danger" data-discard>Descartar</button></div>
       </div>
     </div>`;
   document.body.appendChild(host);
@@ -268,10 +269,22 @@ export function openAvatarEditor(initial: Look, name: string, onSave: (look: Loo
     }
   };
 
+  // fechar sem salvar só pergunta quando algo mudou; um clique fora não descarta mudanças
+  const original = JSON.stringify(initial);
+  const changed = () => JSON.stringify(look) !== original;
+  const ask = (on: boolean) => {
+    $<HTMLElement>('.ae-ask').hidden = !on;
+    $<HTMLElement>('.ae-foot:not(.ae-ask)').hidden = on;
+    if (on) $<HTMLButtonElement>('[data-keep]').focus();
+  };
+  const tryClose = () => (changed() ? ask(true) : close());
   host.addEventListener('click', (e) => {
     if (saving) return;
     const t = e.target as HTMLElement;
-    if ((t === host && !opts.welcome) || t.closest('[data-close]')) return close();
+    if (t === host && !opts.welcome) return changed() ? undefined : close();
+    if (t.closest('[data-close]')) return tryClose();
+    if (t.closest('[data-keep]')) return ask(false);
+    if (t.closest('[data-discard]')) return close();
     const tb = t.closest<HTMLElement>('[data-tab]');
     if (tb) { tab = tb.dataset.tab as Tab; optsEl.scrollTop = 0; render(); return; }
     const th = t.closest<HTMLElement>('[data-set]');
@@ -289,7 +302,10 @@ export function openAvatarEditor(initial: Look, name: string, onSave: (look: Loo
     rebuildPreview();
   });
   host.addEventListener('change', (e) => { if ((e.target as HTMLInputElement).type === 'color') render(); });
-  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !opts.welcome) close(); };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape' || opts.welcome) return;
+    if (!$<HTMLElement>('.ae-ask').hidden) ask(false); else tryClose();
+  };
   addEventListener('keydown', onKey);
 
   function close() {

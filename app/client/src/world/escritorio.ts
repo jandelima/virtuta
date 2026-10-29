@@ -212,9 +212,13 @@ function portalDoor(sp: Space, d: Door, label: string, h: number) {
   plate.position.set(0, top + 0.17, 0.072);
   grp.add(plate);
   // luz de estado (só a porta da reunião usa)
-  const lightMat = new THREE.MeshStandardMaterial({ color: '#22c55e', emissive: '#22c55e', emissiveIntensity: 0.9, roughness: 0.4 });
-  const light = new THREE.Mesh(new THREE.CircleGeometry(0.035, 20), lightMat);
-  light.position.set(0.42, top + 0.17, 0.074);
+  // grande e com aro, para ser vista do outro lado do hub: verde aberta, vermelha fechada
+  const lightMat = new THREE.MeshStandardMaterial({ color: '#22c55e', emissive: '#22c55e', emissiveIntensity: 1.6, roughness: 0.4 });
+  const light = new THREE.Mesh(new THREE.CircleGeometry(0.075, 24), lightMat);
+  light.position.set(0.62, top + 0.17, 0.076);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.075, 0.1, 24), new THREE.MeshStandardMaterial({ color: '#20242c', roughness: 0.6 }));
+  ring.position.set(0, 0, -0.001);
+  light.add(ring);
   light.visible = false;
   light.userData.dynamic = true;
   grp.add(light);
@@ -243,6 +247,27 @@ function airConditioner(sp: Space, x: number, y: number, z: number, rot: number)
   g.position.set(x, y, z);
   g.rotation.y = rot;
   sp.group.add(g);
+}
+
+/** Capacho com o destino e uma seta, logo antes de um vão sem placa (as paredes de vidro ficam baixas). */
+function doorMat(sp: Space, d: Door, label: string) {
+  const g = doorGeom(d);
+  const tex = drawn(400, 256, (c) => {
+    c.fillStyle = '#2b3038'; c.beginPath(); c.roundRect(0, 0, 400, 256, 28); c.fill();
+    c.strokeStyle = 'rgba(255,255,255,0.22)'; c.lineWidth = 6; c.beginPath(); c.roundRect(14, 14, 372, 228, 18); c.stroke();
+    c.fillStyle = '#ffffff'; c.font = '700 96px Geist, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(label, 160, 134);
+    // seta para a porta
+    c.beginPath(); c.moveTo(290, 92); c.lineTo(350, 128); c.lineTo(290, 164); c.closePath(); c.fill();
+  });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.64), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 }));
+  m.rotation.x = -Math.PI / 2;
+  // deitado no chão, com a seta apontando para a porta
+  m.rotation.z = Math.atan2(g.n.z, -g.n.x);
+  // afastado do vão, para o montante do vidro não cobrir o texto
+  m.position.set(g.c.x + g.n.x * 1.0, 0.012, g.c.z + g.n.z * 1.0);
+  m.receiveShadow = true;
+  sp.group.add(m);
 }
 
 function doorSignTex(label: string) {
@@ -285,6 +310,7 @@ function buildSala(boards: Map<string, THREE.MeshStandardMaterial>) {
   sp.wall(SALA.x2, 0, SALA.x2, SALA.z2, { h: 2.4, glass: true, open: [[toHub.a1, toHub.a2]], cut: { room: 'sala', y: low } });
   sp.wall(0, SALA.z2, SALA.x2, SALA.z2, { h: 2.4, glass: true, cut: { room: 'sala', y: low } });
   doorway(sp, toHub, 'Porta para o hub', 'Ir para o hub');
+  doorMat(sp, toHub, 'Hub');
 
   const salaBoard = panel(sp, 3.6, 0.85, 0.1, 3.8, 1.2, 0, boardTex([], 1600), { frame: '#c9cdd3' });
   boards.set('sala', salaBoard.mat);

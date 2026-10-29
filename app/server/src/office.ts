@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import { AREAS, DESKS, ENTRY, GUEST_ENTRY, PROX, REUNIAO, SALA, areaAt, inside } from '../../shared/layout';
+import { AREAS, DESKS, ENTRY, GUEST_ENTRY, HUB, PROX, REUNIAO, SALA, areaAt, inside } from '../../shared/layout';
 import { sanitizeLook } from '../../shared/look';
 import type { BoardElement, ClientMsg, Conv, FocusBlock, FocusSession, GameState, Presence, PublicUser, RadioItem, RadioState, ServerMsg, Status } from '../../shared/protocol';
 import { boards, guests, invites, notes, settings, users } from './db';
@@ -15,11 +15,17 @@ interface Person {
   ws: WebSocket | null;
   dropTimer?: NodeJS.Timeout;
   guestHost?: string;
+  /** Último deslocamento recebido: quem está andando não forma conversa com quem só passa perto. */
+  movedAt?: number;
 }
 
 interface LiveConv extends Conv { since: number }
 
 const DROP_GRACE_MS = 25_000;
+/** Depois do último passo, quanto tempo a pessoa ainda conta como andando. */
+const WALKING_MS = 400;
+/** Jogador da vez que fica esse tempo sem jogar perde o lugar na mesa. */
+const GAME_IDLE_MS = 120_000;
 const WALL_BOARDS = ['sala', 'reuniao'];
 const send = (ws: WebSocket | null, m: ServerMsg) => {
   if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(m));
@@ -57,6 +63,8 @@ export class Office {
   private focus: FocusSession | null = null;
   private focusBlock = -1;
   private game: GameState = emptyGame();
+  /** Última jogada (ou entrada) de cada jogador da mesa. */
+  private gameActive = new Map<string, number>();
   private editors = new Map<string, Set<string>>();
   private docs = new Map<string, { elements: Map<string, BoardElement>; timer?: NodeJS.Timeout; by: string }>();
 
@@ -96,7 +104,7 @@ export class Office {
       p = {
         user,
         ws,
-        presence: { id: who.id, status: who.guest ? 'visita' : 'disp', note: '', x: start.x, z: start.z, rot: 0, seat, unstable: false, waiting: who.guest },
+        presence: { id: who.id, status: who.guest ? 'visita' : 'disp', note: '', x: start.x, z: start.z, rot: 0, seat, unstable: false, waiting: who.guest, hand: false },
       };
       if (who.guest) p.guestHost = invites.get(guests.get(who.id)!.invite)?.created_by;
       this.people.set(who.id, p);
@@ -209,8 +217,11 @@ export class Office {
         if (!finite(m.x, movementBounds.x1, movementBounds.x2) || !finite(m.z, movementBounds.z1, movementBounds.z2) || !finite(m.rot, -10, 10)) return;
         // visitantes não entram na sala da equipe
         if (!member && inside(SALA, m.x, m.z)) return;
+        if (Math.hypot(m.x - p.presence.x, m.z - p.presence.z) > 0.02) p.movedAt = Date.now();
         Object.assign(p.presence, { x: m.x, z: m.z, rot: m.rot, seat: typeof m.seat === 'string' ? m.seat.slice(0, 32) : null });
         this.dirty.add(id);
+        // quem sai do hub deixa a mesa de jogo para outra pessoa
+        if (this.game.players.includes(id) && !inside(HUB, m.x, m.z)) this.gameLeave(id);
         // a rádio só toca dentro da sala da equipe
         if (this.radio.listeners.includes(id) && !inside(SALA, m.x, m.z)) {
           this.radioDrop(id);
@@ -233,6 +244,11 @@ export class Office {
         return this.broadcast({ t: 'user', user: p.user });
       }
       case 'react': return this.broadcast({ t: 'react', from: id, emoji: clean(m.emoji, 8) });
+      case 'hand': {
+        if (p.presence.hand === !!m.up) return;
+        p.presence.hand = !!m.up;
+        return this.broadcast({ t: 'presence', presence: p.presence });
+      }
       case 'leaveConv': return this.leaveConv(id, true);
       case 'knock': {
         const target = this.people.get(m.to);
@@ -256,8 +272,12 @@ export class Office {
       }
       case 'doorReply': {
         if (!this.inRoom(p)) return;
+        if (!this.people.has(m.who)) return;
         if (m.accept) this.doorAllowed.add(m.who);
-        return this.to(m.who, { t: 'doorReply', accept: !!m.accept });
+        this.to(m.who, { t: 'doorReply', accept: !!m.accept });
+        // o pedido some da tela de todos que estão dentro, não só de quem respondeu
+        for (const x of this.people.values()) if (this.inRoom(x)) send(x.ws, { t: 'doorResolved', who: m.who, accept: !!m.accept, by: id });
+        return;
       }
       case 'note': {
         const text = clean(m.text, 600);
@@ -269,6 +289,14 @@ export class Office {
       case 'noteRead': {
         notes.markRead(m.id, id);
         return this.broadcast({ t: 'noteCounts', counts: notes.unreadCounts() }, undefined, this.members);
+      }
+      case 'noteReadAll': {
+        notes.markAllRead(id);
+        return this.broadcast({ t: 'noteCounts', counts: notes.unreadCounts() }, undefined, this.members);
+      }
+      case 'noteDelete': {
+        if (Number.isInteger(m.id)) notes.remove(m.id, id);
+        return;
       }
       case 'boardOpen': return this.boardOpen(p, m.id);
       case 'boardClose': {
@@ -290,10 +318,11 @@ export class Office {
         return;
       }
       case 'boardRestore': {
-        // recuperar uma cópia abre um quadro novo, sem sobrescrever o trabalho em andamento
         const c = boards.getCopy(m.copyId);
         const src = c && boards.get(c.board_id);
         if (!c || !src || !this.canBoard(p, src.id)) return;
+        if (m.mode === 'wall') return this.boardBringBack(p, src.id, c);
+        // abrir como quadro novo, sem tocar no trabalho em andamento
         const nid = `${src.id}-r${randomId(4)}`;
         boards.create(nid, `${src.title} · ${c.name}`, src.scope, JSON.parse(c.elements), p.user.name);
         this.broadcast({ t: 'boards', boards: boards.list() }, undefined, this.members);
@@ -315,19 +344,27 @@ export class Office {
         return this.broadcastRadio();
       }
       case 'radioAdd': return void this.radioAdd(p, m.url);
-      case 'radioSkip':
-        if (this.radio.current?.id === m.itemId) this.radioAdvance();
+      case 'radioSkip': {
+        const cur = this.radio.current;
+        if (!member || cur?.id !== m.itemId) return;
+        this.radioAdvance();
+        for (const l of this.radio.listeners) if (l !== id) this.to(l, { t: 'toast', text: `${p.user.name.split(' ')[0]} pulou “${cur.title}”.` });
         return;
+      }
+      case 'radioRemove': return this.radioRemove(p, m.itemId);
       // cada ouvinte avisa quando a música acaba: só o primeiro aviso conta (com uma música só
       // na programação o id se repete, então os avisos seguintes chegam com a música recém-começada)
       case 'radioEnded':
         if (this.radio.current?.id === m.itemId && Date.now() - this.radio.startedAt > 5000) this.radioAdvance();
         return;
       case 'radioError':
+        // cada ouvinte avisa do mesmo erro: só o primeiro conta, porque o item já saiu da programação
         if (this.radio.current?.id === m.itemId) {
           const title = this.radio.current.title;
+          this.radio.current = null;
           this.radioAdvance();
-          for (const l of this.radio.listeners) this.to(l, { t: 'toast', text: `“${title}” está indisponível. A rádio seguiu para o próximo.` });
+          const next = this.radio.current ? 'A rádio seguiu para a próxima.' : 'A programação ficou vazia.';
+          for (const l of this.radio.listeners) this.to(l, { t: 'toast', text: `“${title}” está indisponível e saiu da programação. ${next}` });
         }
         return;
       case 'focusStart': return this.focusStart(p, m.blocks);
@@ -343,11 +380,21 @@ export class Office {
         if (!this.focus.participants.length) this.focus = null;
         return this.broadcastFocus();
       }
+      case 'focusEnd': {
+        // só quem começou a sessão encerra para todos
+        if (!this.focus || this.focus.owner !== id) return;
+        const who = this.focus.participants.filter((x) => x !== id);
+        this.focus = null;
+        for (const x of who) this.to(x, { t: 'toast', text: `${p.user.name.split(' ')[0]} encerrou a sessão de foco coletivo.` });
+        return this.broadcastFocus();
+      }
       case 'gameJoin': {
         if (this.game.players.includes(id)) return;
         const slot = this.game.players.indexOf(null);
         if (slot < 0) return;
+        if (!inside(HUB, p.presence.x, p.presence.z)) return;
         this.game.players[slot] = id;
+        this.gameActive.set(id, Date.now());
         return this.broadcast({ t: 'game', game: this.game });
       }
       case 'gameMove': return this.gameMove(id, m.cell);
@@ -355,11 +402,13 @@ export class Office {
       case 'gameReset': {
         if (!this.game.players.includes(id)) return;
         this.game = { ...emptyGame(), players: this.game.players };
+        for (const x of this.game.players) if (x) this.gameActive.set(x, Date.now());
         return this.broadcast({ t: 'game', game: this.game });
       }
       case 'pauseInvite': {
         if (!member) return;
-        return this.broadcast({ t: 'pauseInvite', from: id }, id, (x) => this.members(x) && this.effectiveStatus(x) === 'disp');
+        // quem está em reunião ou em conversa não é chamado para a pausa
+        return this.broadcast({ t: 'pauseInvite', from: id }, id, (x) => this.members(x) && this.effectiveStatus(x) === 'disp' && !this.inRoom(x) && !this.convOf.has(x.presence.id));
       }
       case 'admit': {
         const g = this.people.get(m.guest);
@@ -493,6 +542,9 @@ export class Office {
       if (!best) continue;
       const key = [uid, best.presence.id].sort().join('|');
       seen.add(key);
+      // passar perto não conta: o tempo de permanência só corre com os dois parados
+      const now = Date.now();
+      if (now - (u.movedAt ?? 0) < WALKING_MS || now - (best.movedAt ?? 0) < WALKING_MS) { this.dwell.delete(key); continue; }
       const t = (this.dwell.get(key) ?? 0) + dt;
       this.dwell.set(key, t);
       if (t < PROX.dwell) continue;
@@ -574,6 +626,25 @@ export class Office {
     doc.timer = setTimeout(() => boards.save(id, [...doc.elements.values()], doc.by), 1200);
   }
 
+  /** Volta uma cópia para o próprio quadro; o que estava nele vira uma cópia, para não se perder. */
+  private boardBringBack(p: Person, id: string, c: { name: string; elements: string }) {
+    const doc = this.docs.get(id) ?? { elements: new Map((boards.get(id)?.elements ?? []).map((e) => [e.id, e])), by: '' };
+    this.docs.set(id, doc);
+    const before = [...doc.elements.values()];
+    if (before.length) boards.copy(id, `Antes de recuperar “${c.name}”`, before, p.user.name);
+    const els = JSON.parse(c.elements) as BoardElement[];
+    doc.elements = new Map(els.map((e) => [e.id, e]));
+    doc.by = p.user.name;
+    clearTimeout(doc.timer);
+    doc.timer = undefined;
+    boards.save(id, els, p.user.name);
+    const title = boards.get(id)?.title ?? '';
+    const eds = [...(this.editors.get(id) ?? [])];
+    for (const e of eds) this.to(e, { t: 'board', id, title, elements: els, copies: boards.copies(id), editors: eds });
+    // quadros das paredes: o desenho no mapa acompanha
+    if (WALL_BOARDS.includes(id)) this.broadcast({ t: 'boardOp', id, put: els, del: before.map((e) => e.id).filter((x) => !doc.elements.has(x)), by: p.presence.id }, undefined, (x) => (this.members(x) || id === 'reuniao') && !eds.includes(x.presence.id));
+  }
+
   private boardElements(id: string) {
     const doc = this.docs.get(id);
     return doc ? [...doc.elements.values()] : boards.get(id)?.elements ?? [];
@@ -605,9 +676,22 @@ export class Office {
     } catch {
       // sem acesso ao YouTube pelo servidor: aceita e deixa o player avisar se falhar
     }
-    this.radio.queue.push({ id: this.radioSeq++, videoId, title, addedBy: p.user.name });
+    this.radio.queue.push({ id: this.radioSeq++, videoId, title, addedBy: p.user.name, addedById: p.presence.id });
     if (!this.radio.current && this.radio.listeners.length) this.radioAdvance();
     else { this.saveRadio(); this.broadcastRadio(); }
+  }
+
+  /** Tira um item da programação: quem adicionou ou a administração. */
+  private radioRemove(p: Person, itemId: number) {
+    const all = [...(this.radio.current ? [this.radio.current] : []), ...this.radio.queue];
+    const item = all.find((q) => q.id === itemId);
+    if (!item || (item.addedById !== p.presence.id && p.user.role !== 'admin')) return;
+    if (this.radio.current?.id === itemId) {
+      this.radio.current = null;
+      if (this.radio.listeners.length) return this.radioAdvance();
+    } else this.radio.queue = this.radio.queue.filter((q) => q.id !== itemId);
+    this.saveRadio();
+    this.broadcastRadio();
   }
 
   private radioDrop(id: string) {
@@ -654,6 +738,7 @@ export class Office {
   }
 
   private focusTick() {
+    this.gameTick();
     if (!this.focus) return;
     const b = this.currentBlock();
     if (!b) { this.focus = null; return this.broadcastFocus(); }
@@ -670,11 +755,22 @@ export class Office {
   private broadcastFocus() { this.broadcast({ t: 'focus', focus: this.focus, serverTime: Date.now() }); }
 
   // ---------- jogo da velha (lazer) ----------
+  /** Partida parada: quem está na vez e não joga há muito tempo libera a mesa. */
+  private gameTick() {
+    const g = this.game;
+    const turn = g.players[g.turn];
+    if (!turn || !g.players[0] || !g.players[1] || g.winner || g.draw) return;
+    if (Date.now() - (this.gameActive.get(turn) ?? Date.now()) < GAME_IDLE_MS) return;
+    this.to(turn, { t: 'toast', text: 'Você ficou um tempo sem jogar e saiu da mesa de jogo.' });
+    this.gameLeave(turn);
+  }
+
   private gameMove(id: string, cell: number) {
     const g = this.game;
     if (g.winner || g.draw || !Number.isInteger(cell) || cell < 0 || cell > 8 || g.board[cell]) return;
     if (g.players[g.turn] !== id || !g.players[0] || !g.players[1]) return;
     g.board[cell] = g.turn === 0 ? 'X' : 'O';
+    this.gameActive.set(id, Date.now());
     const lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
     if (lines.some((l) => l.every((c) => g.board[c] === g.board[cell]))) g.winner = id;
     else if (g.board.every(Boolean)) g.draw = true;
@@ -687,8 +783,10 @@ export class Office {
     if (i < 0) return;
     // quem fica continua na mesa, esperando o próximo adversário
     const stays = this.game.players[i === 0 ? 1 : 0];
+    this.gameActive.delete(id);
     this.game = emptyGame();
     this.game.players[0] = stays;
+    if (stays) this.gameActive.set(stays, Date.now());
     this.broadcast({ t: 'game', game: this.game });
   }
 }

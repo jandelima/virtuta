@@ -37,6 +37,7 @@ function loadApi() {
 }
 
 const VOL_KEY = 'virtuta.radioVolume';
+const VIDEO_KEY = 'virtuta.radioVideo';
 // tolerância de alinhamento entre ouvintes, em segundos
 const DRIFT = 3;
 
@@ -52,8 +53,14 @@ export class RadioPlayer {
   /** A pessoa ligou "Ouvir" (vale enquanto ela estiver na sala). */
   private want = false;
 
+  /** O vídeo fica recolhido (só o som) a menos que a pessoa peça para ver: ele empurrava a lista de pessoas. */
+  private video = false;
+
   constructor(private app: OfficeApp) {
-    try { this.volume = Number(localStorage.getItem(VOL_KEY) ?? 50); } catch { /* volume padrão */ }
+    try {
+      this.volume = Number(localStorage.getItem(VOL_KEY) ?? 50);
+      this.video = localStorage.getItem(VIDEO_KEY) === '1';
+    } catch { /* preferências padrão */ }
   }
 
   /** Tocando de fato para esta pessoa (o servidor confirma). */
@@ -90,9 +97,11 @@ export class RadioPlayer {
     else if (!should && this.listening) this.app.send({ t: 'radioLeave' });
     if (!should && this.player) this.stop();
     const away = this.want && !should;
-    if (away !== this.away) { this.away = away; this.render(); }
+    const inRoom = this.inRoom();
+    if (away !== this.away || inRoom !== this.wasInRoom) { this.away = away; this.wasInRoom = inRoom; this.render(); }
   }
   private away = false;
+  private wasInRoom = false;
 
   stop() {
     this.player?.destroy();
@@ -181,15 +190,23 @@ export class RadioPlayer {
     const on = this.want;
     const n = r.listeners.length;
     const { info, yt, ctl } = this.parts();
-    info.innerHTML = `<div class="h">${icon('radio')}<b>Rádio</b><small>${n ? `${n} ouvindo` : 'Ninguém ouvindo'}</small></div>
+    const playing = this.listening && !!r.current;
+    info.innerHTML = `<div class="h">${icon('radio')}<b>Rádio</b><small>${n ? `${n} ouvindo` : ''}</small>${playing ? `<button class="mini" id="rbVideo" aria-pressed="${this.video}" title="${this.video ? 'Ocultar o vídeo (só o som)' : 'Mostrar o vídeo'}">${icon('screen')}</button>` : ''}${app.guest ? '' : '<button class="mini txt" id="rbQueue">Programação</button>'}</div>
       <div class="trk"><span class="cover">${r.current ? `<img src="https://i.ytimg.com/vi/${esc(r.current.videoId)}/default.jpg" alt=""/>` : ''}</span><div><b>${r.current ? esc(r.current.title) : 'Nada tocando'}</b><small>${this.away ? 'Toca quando você está na sala da equipe' : r.current ? `Adicionado por ${esc(r.current.addedBy)}` : 'Adicione um link do YouTube'}</small></div></div>`;
-    yt.hidden = !this.listening || !r.current;
+    yt.hidden = !playing;
+    // recolhido, o player continua tocando: só deixa de ocupar espaço
+    yt.classList.toggle('collapsed', !this.video);
     ctl.innerHTML = on
-      ? `<button id="rbSkip" aria-label="Próxima" title="Próxima">${icon('skip')}</button>${icon('vol')}<input class="vol" id="rbVol" type="range" min="0" max="100" value="${this.volume}" aria-label="Volume"/><button class="leave" id="rbQueue2" title="Programação">${icon('plus')}</button><button class="leave" id="rbLeave">Desligar</button>`
-      : app.guest ? '' : `<button class="join" id="rbJoin">${icon('play')}Ouvir</button><button class="leave" id="rbQueue">Programação</button>`;
+      ? `<button id="rbSkip" aria-label="Pular a música" title="Pular a música">${icon('skip')}</button>${icon('vol')}<input class="vol" id="rbVol" type="range" min="0" max="100" value="${this.volume}" aria-label="Volume"/><button class="leave" id="rbLeave">Desligar</button>`
+      : app.guest ? '' : `<button class="join" id="rbJoin">${icon('play')}${this.inRoom() ? 'Ouvir' : 'Ouvir ao voltar à sala'}</button>`;
+    ctl.hidden = !ctl.innerHTML;
     ctl.querySelector('#rbJoin')?.addEventListener('click', () => this.join());
-    ctl.querySelector('#rbQueue')?.addEventListener('click', () => app.panels.open('radio'));
-    ctl.querySelector('#rbQueue2')?.addEventListener('click', () => app.panels.open('radio'));
+    info.querySelector('#rbQueue')?.addEventListener('click', () => app.panels.open('radio'));
+    info.querySelector('#rbVideo')?.addEventListener('click', () => {
+      this.video = !this.video;
+      try { localStorage.setItem(VIDEO_KEY, this.video ? '1' : '0'); } catch { /* vale só nesta sessão */ }
+      this.render();
+    });
     ctl.querySelector('#rbLeave')?.addEventListener('click', () => this.leave());
     ctl.querySelector('#rbSkip')?.addEventListener('click', () => r.current && app.send({ t: 'radioSkip', itemId: r.current.id }));
     ctl.querySelector<HTMLInputElement>('#rbVol')?.addEventListener('input', (e) => {
