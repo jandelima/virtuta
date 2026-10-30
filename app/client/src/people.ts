@@ -25,7 +25,8 @@ export interface Person {
 export const STATUS_COLOR: Record<Status, string> = {
   disp: '#22c55e',
   foco: '#8b5cf6',
-  reuniao: '#ef4444',
+  // laranja-escuro: o vermelho fica só para o que pede ação (microfone mudo em conversa, porta fechada)
+  reuniao: '#e8590c',
   afk: '#98a2b3',
   visita: '#f59e0b',
 };
@@ -36,4 +37,12 @@ export const STATUS_LABEL: Record<Status, string> = {
   reuniao: 'Em reunião',
   afk: 'Ausente',
   visita: 'Visitante',
+};
+
+/** Forma de cada estado, além da cor (quem não distingue bem as cores vê a diferença). */
+export const STATUS_ICON: Partial<Record<Status, string>> = {
+  foco: 'focus',
+  reuniao: 'screen',
+  afk: 'coffee',
+  visita: 'door',
 };

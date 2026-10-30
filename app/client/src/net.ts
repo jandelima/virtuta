@@ -2,7 +2,7 @@ import type { ClientMsg, ServerMsg } from '../../shared/protocol';
 
 // Conexão em tempo real com o servidor, com reconexão automática e indicação de estado.
 
-export type NetState = 'connecting' | 'online' | 'reconnecting' | 'replaced' | 'closed' | 'forbidden';
+export type NetState = 'connecting' | 'online' | 'reconnecting' | 'replaced' | 'closed' | 'forbidden' | 'expired';
 
 export class Net {
   private ws: WebSocket | null = null;
@@ -35,10 +35,17 @@ export class Net {
       if (e.code === 4001) { this.stopped = true; return this.onState('replaced'); }
       if (e.code === 4003) { this.stopped = true; return this.onState('forbidden'); }
       if (this.stopped) return this.onState('closed');
-      // tenta de novo com espera crescente, até 10 s
+      // tenta de novo com espera crescente, até 10 s; se a sessão venceu, não adianta insistir
       this.onState('reconnecting');
       const wait = Math.min(10_000, 500 * 2 ** this.retry++);
-      setTimeout(() => !this.stopped && this.connect(), wait);
+      setTimeout(async () => {
+        if (this.stopped) return;
+        try {
+          const r = await fetch('/api/me', { credentials: 'same-origin' });
+          if (r.status === 401) { this.stopped = true; return this.onState('expired'); }
+        } catch { /* sem rede: tenta o WebSocket de novo */ }
+        if (!this.stopped) this.connect();
+      }, wait);
     };
   }
 

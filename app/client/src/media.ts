@@ -1,9 +1,10 @@
 import type { LocalParticipant, RemoteParticipant, RemoteTrackPublication, Room, Track } from 'livekit-client';
 import { api } from './api';
 
-// Voz, câmera e tela pelo LiveKit. Todos entram numa única sala de mídia, mas cada pessoa só
-// assina (recebe) as faixas de quem está na mesma conversa — quem decide isso é o servidor.
-// O SDK só é carregado quando a pessoa precisa de mídia, para a página abrir leve.
+// Voz, câmera e tela pelo LiveKit. Cada conversa é uma sala de mídia própria, e o servidor só
+// entrega o acesso à sala da conversa em que a pessoa está: trocar de conversa é trocar de sala.
+// Microfone e câmera só funcionam dentro de uma conversa. Um anúncio para a sala usa uma sala
+// à parte, ouvida ao mesmo tempo que a conversa. O SDK só é carregado quando precisa.
 
 type LK = typeof import('livekit-client');
 
@@ -30,6 +31,16 @@ export class Media {
   private lk: LK | null = null;
   private room: Room | null = null;
   private connecting: Promise<void> | null = null;
+  /** Conversa atual (sala que deveria estar aberta) e a sala aberta de fato. */
+  private convId: string | null = null;
+  private roomConv: string | null = null;
+  /** Microfone e câmera pedidos: continuam ao trocar de uma conversa direto para outra. */
+  private wantMic = false;
+  private wantCam = false;
+  private gen = 0;
+  private ann: Room | null = null;
+  /** Anúncio em andamento que esta pessoa ouve ou faz. */
+  announcing: 'speaker' | 'listener' | null = null;
   private allowed = new Set<string>();
   private audioBox = document.createElement('div');
   private speaking = new Set<string>();
@@ -52,18 +63,24 @@ export class Media {
     return this.lk;
   }
 
-  /** Conecta à sala de mídia (uma vez). */
+  /** Conecta à sala da conversa atual (se ainda não estiver nela). */
   ensure() {
-    if (this.room) return Promise.resolve();
+    if (!this.convId) return Promise.reject(Object.assign(new Error('Fora de conversa'), { name: 'NoConversation' }));
+    if (this.room && this.roomConv === this.convId) return Promise.resolve();
     this.connecting ??= this.connect().finally(() => (this.connecting = null));
     return this.connecting;
   }
 
   private async connect() {
+    const gen = ++this.gen;
+    const conv = this.convId;
     this.setState('connecting');
     try {
       const lk = await this.load();
-      const { url, token } = await api.mediaToken();
+      // sai da sala da conversa anterior antes de entrar na nova
+      if (this.room) await this.leaveRoom();
+      const { url, token } = await api.mediaToken('conv');
+      if (gen !== this.gen || conv !== this.convId) return;
       const room = new lk.Room({
         adaptiveStream: true,
         dynacast: true,
@@ -90,16 +107,29 @@ export class Media {
         .on(E.AudioPlaybackStatusChanged, () => { this.needsAudioUnlock = !room.canPlaybackAudio; this.onChange(); })
         .on(E.Reconnecting, () => this.setState('reconnecting'))
         .on(E.Reconnected, () => this.setState('on'))
-        .on(E.Disconnected, () => { this.room = null; this.mic = this.cam = this.screen = false; this.setState('off'); })
+        .on(E.Disconnected, () => {
+          // saída pedida (troca de conversa) já foi tratada; aqui é o servidor tirando da sala
+          if (this.room !== room) return;
+          this.room = null;
+          this.roomConv = null;
+          this.mic = this.cam = this.screen = false;
+          this.setState('off');
+        })
         .on(E.DataReceived, (payload, p, _kind, topic) => {
           if (topic !== 'marcas' || !p) return;
           try { this.onData(p.identity, JSON.parse(new TextDecoder().decode(payload))); } catch { /* pacote inválido */ }
         });
       await room.connect(url, token, { autoSubscribe: false });
+      if (gen !== this.gen) { void room.disconnect(); return; }
       this.room = room;
+      this.roomConv = conv;
       this.needsAudioUnlock = !room.canPlaybackAudio;
       room.remoteParticipants.forEach((p) => p.trackPublications.forEach((pub) => this.syncSub(pub, p)));
       this.setState('on');
+      // quem já estava com microfone ou câmera ligados numa conversa continua assim na seguinte
+      if (this.wantMic) await room.localParticipant.setMicrophoneEnabled(true, { deviceId: this.prefs.audioinput }).then(() => (this.mic = true)).catch(() => {});
+      if (this.wantCam) await room.localParticipant.setCameraEnabled(true, { deviceId: this.prefs.videoinput, resolution: lk.VideoPresets.h360.resolution }).then(() => (this.cam = true)).catch(() => {});
+      this.onChange();
     } catch (e) {
       console.error('Falha na mídia', e);
       this.setState('failed');
@@ -112,11 +142,60 @@ export class Media {
     this.onChange();
   }
 
-  /** Quem está na conversa atual: só essas faixas são recebidas. */
-  setMembers(ids: string[]) {
-    this.allowed = new Set(ids);
-    if (ids.length) void this.ensure().catch(() => {});
+  private async leaveRoom() {
+    const r = this.room;
+    this.room = null;
+    this.roomConv = null;
+    this.mic = this.cam = this.screen = false;
+    await r?.disconnect();
+  }
+
+  /** Conversa atual: abre a sala dela (trocando de sala se mudou); sem conversa, fecha a sala. */
+  setConv(conv: { id: string; members: string[] } | null) {
+    this.allowed = new Set(conv?.members ?? []);
+    const next = conv?.id ?? null;
+    if (next !== this.convId) {
+      this.convId = next;
+      if (!next) {
+        // fora de conversa, microfone e câmera desligam (entrar na próxima nunca os liga sozinha)
+        this.gen++;
+        this.wantMic = this.wantCam = false;
+        void this.leaveRoom().then(() => this.setState('off'));
+      } else void this.ensure().catch(() => {});
+    }
     this.room?.remoteParticipants.forEach((p) => p.trackPublications.forEach((pub) => this.syncSub(pub, p)));
+    this.onChange();
+  }
+
+  // ---------- anúncio para a sala ----------
+  /** Entra na sala do anúncio: quem anuncia publica o microfone, os outros só ouvem. */
+  async joinAnnounce(speaker: boolean) {
+    if (this.ann) return;
+    const lk = await this.load();
+    const { url, token } = await api.mediaToken('announce');
+    const room = new lk.Room({ audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, deviceId: this.prefs.audioinput } });
+    room.on(lk.RoomEvent.TrackSubscribed, (track) => { if (track.kind === 'audio') this.audioBox.appendChild(track.attach()); })
+      .on(lk.RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((el) => el.remove()))
+      .on(lk.RoomEvent.Disconnected, () => { if (this.ann === room) { this.ann = null; this.announcing = null; this.onChange(); } });
+    this.ann = room;
+    this.announcing = speaker ? 'speaker' : 'listener';
+    try {
+      await room.connect(url, token, { autoSubscribe: !speaker });
+      if (speaker) await room.localParticipant.setMicrophoneEnabled(true, { deviceId: this.prefs.audioinput });
+      if (!room.canPlaybackAudio) { this.needsAudioUnlock = true; }
+    } catch (e) {
+      this.ann = null;
+      this.announcing = null;
+      void room.disconnect();
+      throw e;
+    } finally { this.onChange(); }
+  }
+
+  leaveAnnounce() {
+    const r = this.ann;
+    this.ann = null;
+    this.announcing = null;
+    void r?.disconnect();
     this.onChange();
   }
 
@@ -137,6 +216,7 @@ export class Media {
   /** Destrava o áudio depois de um clique (exigência dos navegadores). */
   async unlockAudio() {
     await this.room?.startAudio();
+    await this.ann?.startAudio();
     this.needsAudioUnlock = false;
     this.onChange();
   }
@@ -146,12 +226,13 @@ export class Media {
   async setMic(on: boolean) {
     await this.ensure();
     await this.local!.setMicrophoneEnabled(on, { deviceId: this.prefs.audioinput });
-    this.mic = on;
+    this.mic = this.wantMic = on;
     this.onChange();
   }
 
   async setCam(on: boolean) {
     await this.ensure();
+    this.wantCam = on;
     const lk = this.lk!;
     await this.local!.setCameraEnabled(on, { deviceId: this.prefs.videoinput, resolution: lk.VideoPresets.h360.resolution });
     this.cam = on;
@@ -207,7 +288,9 @@ export class Media {
   }
 
   disconnect() {
-    void this.room?.disconnect();
-    this.room = null;
+    this.gen++;
+    this.convId = null;
+    void this.leaveRoom();
+    this.leaveAnnounce();
   }
 }

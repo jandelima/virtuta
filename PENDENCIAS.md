@@ -103,3 +103,44 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 - [x] **P7 "Sair do escritório"** confirma quando há conversa ou rádio.
 - [x] **P8 Levantar a mão** no lugar do aceno duplicado.
 - [x] **De quebra, no mesmo código:** "Responder" um bilhete de quem não tem mesa abria "Mesa livre" (#22); o botão da rádio fora da sala diz "Ouvir ao voltar à sala".
+
+# Rodada 9 — 29/10: três análises independentes (relatorios/ux-3.md, bugs-1.md, produto-1.md)
+
+**Bugs**
+- [x] **B1** Ninguém ouve conversa de que não participa (mídia por conversa, decidida pelo servidor).
+- [x] **B2** Resposta a "Posso falar?" só vale para pedido que existiu.
+- [x] **B3** Revogar convite ou recusar visitante tira o acesso de verdade.
+- [x] **B4** O quadro não perde o que se desenha depois de reinício ou queda longa.
+- [x] **B5** Depois de reconectar, posição, status e mão voltam certos para todos.
+- [x] **B6** Sem conversa fantasma depois de queda rápida.
+- [x] **B7** Elemento malformado não inutiliza o quadro.
+- [x] **B8** Sem avatar fantasma ao remover acesso ou recusar visitante.
+- [x] **B9** Visitante que aguarda não recebe o estado do escritório.
+- [x] **B10** Foco coletivo sem sessão zumbi.
+- [x] **B11** Rádio só aceita comandos de quem deve (erros definitivos e confirmados; visitante não adiciona).
+- [x] **B12** Sessão expirada leva ao login; sessão renovada com o uso.
+- [x] **B13** Jogo da velha não expulsa quem esperava sozinho.
+- [x] **B14** Fechar a Administração pelo X não deixa Esc preso.
+- [x] **B15** Aviso de visitante some para todos quando alguém responde.
+
+**UI e UX**
+- [x] **U1** Aba em segundo plano chama a atenção (convite para ativar avisos, título e ícone com pendências).
+- [x] **U2** Aviso de microfone desligado dentro da conversa.
+- [x] **U3** Janela estreita: lateral recolhida, dock sempre acessível.
+- [x] **U4** Cartão da conversa fora de cima de quem conversa, recolhível; avisos não caem no meio da cena.
+- [x] **U5** "Posso falar?" com espera, cancelamento e prazo (e batida na porta com prazo).
+- [x] **U6** Ação principal conforme o estado do colega; dica ao passar o mouse sobre pessoas.
+- [x] **U7** Foco coletivo anunciado a todos; contagem só dos blocos de foco; dock sem confusão.
+- [x] **U8** Primeira orientação e dica de teclas compacta em notebook.
+- [x] **U10** Porta controlada pelo cartão da reunião; rostos de quem está dentro; reunião vale mais que foco.
+- [x] **U11** Formulários com Enter, "Adicionando…" e erro junto do campo.
+- [x] **U12** Rádio compacta quando não faz sentido destacar.
+- [x] **U13** Estado com forma além da cor; reunião sem o vermelho de alerta.
+- [x] **U14** Um contador só de pendências, no sino.
+- [x] **U15** Rótulos legíveis no hub.
+
+**Produto**
+- [x] **P5** "Me avise quando estiver livre" e "quando chegar"; "Te chamo quando terminar".
+- [x] **P10** Conversa reservada, com pedido para entrar.
+- [x] **P12** Falar com a sala toda.
+- [x] **De quebra:** quem entrava no escritório não recebia a lista das conversas já em andamento (só chegava quando alguma mudava); a lista de telas compartilhadas já vistas era zerada a cada redesenho do cartão da conversa.

@@ -152,7 +152,7 @@ export class RadioPlayer {
             if (e.data === window.YT!.PlayerState.ENDED) this.app.send({ t: 'radioEnded', itemId: this.playing });
           },
           // vídeo indisponível ou bloqueado para incorporação: avisa e segue para o próximo
-          onError: () => this.app.send({ t: 'radioError', itemId: this.playing }),
+          onError: (e: { data: number }) => this.app.send({ t: 'radioError', itemId: this.playing, code: e.data }),
         },
       });
     } else if (this.ready) {
@@ -191,14 +191,19 @@ export class RadioPlayer {
     const n = r.listeners.length;
     const { info, yt, ctl } = this.parts();
     const playing = this.listening && !!r.current;
-    info.innerHTML = `<div class="h">${icon('radio')}<b>Rádio</b><small>${n ? `${n} ouvindo` : ''}</small>${playing ? `<button class="mini" id="rbVideo" aria-pressed="${this.video}" title="${this.video ? 'Ocultar o vídeo (só o som)' : 'Mostrar o vídeo'}">${icon('screen')}</button>` : ''}${app.guest ? '' : '<button class="mini txt" id="rbQueue">Programação</button>'}</div>
-      <div class="trk"><span class="cover">${r.current ? `<img src="https://i.ytimg.com/vi/${esc(r.current.videoId)}/default.jpg" alt=""/>` : ''}</span><div><b>${r.current ? esc(r.current.title) : 'Nada tocando'}</b><small>${this.away ? 'Toca quando você está na sala da equipe' : r.current ? `Adicionado por ${esc(r.current.addedBy)}` : 'Adicione um link do YouTube'}</small></div></div>`;
+    // sem nada para ouvir aqui (fora da sala, ou sem música), o cartão vira uma linha só e sem destaque
+    const queued = (r.current ? 1 : 0) + r.queue.length;
+    const compact = !on && (!this.inRoom() || !queued);
+    this.card.classList.toggle('compact', compact);
+    const state = n ? `${n} ouvindo` : compact ? (!this.inRoom() && !app.guest ? 'só na sala' : queued ? `${queued} na fila` : 'fila vazia') : '';
+    info.innerHTML = `<div class="h">${icon('radio')}<b>Rádio</b><small>${state}</small>${playing ? `<button class="mini" id="rbVideo" aria-pressed="${this.video}" title="${this.video ? 'Ocultar o vídeo (só o som)' : 'Mostrar o vídeo'}">${icon('screen')}</button>` : ''}${app.guest ? '' : '<button class="mini txt" id="rbQueue">Programação</button>'}</div>
+      <div class="trk"><span class="cover">${r.current ? `<img src="https://i.ytimg.com/vi/${esc(r.current.videoId)}/default.jpg" alt=""/>` : ''}</span><div><b>${r.current ? esc(r.current.title) : r.queue[0] ? esc(r.queue[0].title) : 'Nada tocando'}</b><small>${this.away ? 'Toca quando você está na sala da equipe' : r.current ? (n ? `Adicionado por ${esc(r.current.addedBy)}` : 'Pausada · ouça para tocar') : r.queue[0] ? 'Próxima · ouça para tocar' : 'Adicione um link do YouTube'}</small></div></div>`;
     yt.hidden = !playing;
     // recolhido, o player continua tocando: só deixa de ocupar espaço
     yt.classList.toggle('collapsed', !this.video);
     ctl.innerHTML = on
       ? `<button id="rbSkip" aria-label="Pular a música" title="Pular a música">${icon('skip')}</button>${icon('vol')}<input class="vol" id="rbVol" type="range" min="0" max="100" value="${this.volume}" aria-label="Volume"/><button class="leave" id="rbLeave">Desligar</button>`
-      : app.guest ? '' : `<button class="join" id="rbJoin">${icon('play')}${this.inRoom() ? 'Ouvir' : 'Ouvir ao voltar à sala'}</button>`;
+      : app.guest || compact ? '' : `<button class="join" id="rbJoin">${icon('play')}Ouvir</button>`;
     ctl.hidden = !ctl.innerHTML;
     ctl.querySelector('#rbJoin')?.addEventListener('click', () => this.join());
     info.querySelector('#rbQueue')?.addEventListener('click', () => app.panels.open('radio'));

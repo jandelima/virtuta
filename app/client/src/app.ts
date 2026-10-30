@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { CAFE_SPOT, DOORS, GUEST_ENTRY, REUNIAO, SALA, areaAt, doorGeom, inside, type Door, type SpaceId } from '../../shared/layout';
-import type { BoardElement, Conv, FocusSession, GameState, Note, Presence, PublicUser, RadioState, ServerMsg, Settings, StoredLook, Status as NetStatus } from '../../shared/protocol';
+import type { Announce, BoardElement, Conv, FocusSession, GameState, Note, Presence, PublicUser, RadioState, ServerMsg, Settings, StoredLook, Status as NetStatus } from '../../shared/protocol';
 import { api } from './api';
 import { Avatar } from './avatar';
 import { Media } from './media';
 import { Net, type NetState } from './net';
 import { STATUS_LABEL, type Person, type Status } from './people';
+import { icon } from './ui/icons';
 import { Scene3D } from './scene';
 import { renderPortraits } from './ui/portraits';
 import { esc } from './ui/dom';
@@ -61,6 +62,13 @@ export class OfficeApp {
   private lastSent = { x: 0, z: 0, rot: 0, seat: '' as string | null, at: 0 };
   private started = false;
   boardListener: ((m: ServerMsg) => void) | null = null;
+  /** Quadro aberto: reabre no servidor depois de uma reconexão (senão as edições se perdem). */
+  boardReopen: (() => void) | null = null;
+  /** Pedidos "Posso falar?" feitos e ainda sem resposta: para quem → quando. */
+  pendingKnocks = new Map<string, number>();
+  /** Avisos pedidos ("quando ficar livre", "quando chegar"): de quem → tipo. */
+  watching = new Map<string, 'free' | 'arrive'>();
+  announce: Announce | null = null;
   followUntil = 0;
   followId: string | null = null;
   /** Atravessando uma porta (tela escurecida): não anda nem atravessa de novo. */
@@ -146,6 +154,7 @@ export class OfficeApp {
       const vis = areaAt(a.pos.x, a.pos.z)?.id === here;
       if (a.root.visible !== vis) a.setActive(vis);
     }
+    for (const t of this.hubTags) t.visible = here === 'hub';
   }
 
   // ---------- mensagens do servidor ----------
@@ -167,15 +176,29 @@ export class OfficeApp {
         this.sc.wake(1500);
         return;
       case 'conv': return this.setConv(m.conv);
-      case 'convs': this.convs = m.convs; this.refreshCallLabels(); this.shell.renderPeople(); return;
+      case 'convs': this.convs = m.convs; this.refreshCallLabels(); this.shell.renderPeople(); return this.panels.refresh('pessoa');
       case 'react': return this.showReaction(m.from, m.emoji);
       case 'knock': return this.notify.knock(m.from, m.text);
-      case 'knockReply': return this.notify.toast(m.accept ? `${this.name(m.from)} aceitou. Vocês estão em conversa.` : `${this.name(m.from)} não pode falar agora.`);
+      case 'knockReply':
+        this.pendingKnocks.delete(m.from);
+        this.refreshPersonPanel(m.from);
+        return this.notify.toast(m.accept ? `${this.name(m.from)} aceitou. Vocês estão em conversa.` : m.later ? `${this.name(m.from)} não pode agora e vai chamar você quando terminar.` : `${this.name(m.from)} não pode falar agora.`, { who: m.from });
+      case 'knockGone': return this.notify.dismiss(`knock-${m.from}`);
+      case 'knockExpired': return this.knockExpired(m.to);
+      case 'watchHit': return this.watchHit(m.target, m.kind);
+      case 'watched': return this.notify.watched(m.by, m.kind, m.on);
+      case 'remind': return this.notify.remind(m.who);
+      case 'convAsk': return this.notify.convAsk(m.who);
+      case 'convAskResolved': return this.notify.dismiss(`convask-${m.who}`);
+      case 'announce': return this.setAnnounce(m.announce);
+      case 'guestResolved': return this.notify.dismiss(`guest-${m.guest}`);
+      case 'radioAddResult': return this.panels.radioAdded(m.ok, m.text);
       case 'door': return this.setDoor(m.open, m.by);
-      case 'doorKnock': return this.notify.doorKnock(m.who);
-      case 'doorResolved': return this.notify.doorResolved(m.who, m.accept, m.by);
+      case 'doorKnock': this.notify.doorKnock(m.who); return this.convView.render();
+      case 'doorResolved': this.notify.doorResolved(m.who, m.accept, m.by); return this.convView.render();
       case 'doorReply':
         this.notify.dismiss('door-wait');
+        if (m.expired) return this.notify.toast('Ninguém respondeu à batida na porta. Tente de novo ou deixe um bilhete para quem está na reunião.');
         if (m.accept) {
           this.doorAllowed = true;
           this.applyDoorNav();
@@ -216,6 +239,8 @@ export class OfficeApp {
   }
 
   private init(m: Extract<ServerMsg, { t: 'init' }>) {
+    // reconexão: o servidor pode ter recriado a presença (reinício); o estado daqui é o que vale
+    const before = this.started && this.myPresence ? { ...this.myPresence } : null;
     this.me = m.you;
     this.serverOffset = m.serverTime - Date.now();
     this.users = new Map(m.users.map((u) => [u.id, u]));
@@ -232,6 +257,7 @@ export class OfficeApp {
     for (const id of [...this.avatars.keys()]) if (!keep.has(id)) this.removePresence(id);
     for (const p of m.presence) this.upsertPresence(p, true);
     this.portraits = { ...this.portraits, ...renderPortraits([...this.users.values()].map((u) => this.person(u.id))) };
+    if (before) this.restoreAfterReconnect(before);
     if (!this.started) {
       this.started = true;
       const me = this.myAvatar!;
@@ -242,6 +268,7 @@ export class OfficeApp {
       document.getElementById('loading')?.classList.add('done');
       // quem chega pela primeira vez monta o próprio avatar antes de tudo
       if (!this.guest && !this.users.get(this.me)?.look) this.shell.editAvatar(true);
+      else if (!this.guest) setTimeout(() => this.shell.guide(), 1200);
       this.restoreStatusUntil();
     }
     this.refreshDesks();
@@ -274,14 +301,27 @@ export class OfficeApp {
     };
   }
 
+  /** Depois de reconectar: posição, status, mensagem e mão voltam a valer no servidor e para todos. */
+  private restoreAfterReconnect(before: Presence) {
+    const me = this.myAvatar, p = this.myPresence;
+    if (!p) return;
+    if (!this.guest && (p.status !== before.status || p.note !== before.note)) this.setStatus(before.status, before.note, this.statusUntil);
+    if (p.hand !== before.hand) { p.hand = before.hand; this.send({ t: 'hand', up: before.hand }); }
+    // força o envio da posição no próximo quadro
+    if (me) { Object.assign(p, { x: me.pos.x, z: me.pos.z, seat: me.seat?.id ?? null }); this.lastSent = { x: NaN, z: NaN, rot: NaN, seat: '', at: 0 }; }
+    this.boardReopen?.();
+    this.radioPlayer.update();
+  }
+
   /** Estado exibido: visitante aguardando, em reunião (dentro da sala), foco coletivo ou o escolhido. */
   displayStatus(id: string): Status {
     const p = this.presence.get(id);
     if (!p) return 'afk';
     if (p.waiting) return 'visita';
+    // estar na sala de reunião vale mais que o foco coletivo: a pessoa está numa chamada
+    if (p.status !== 'afk' && inside(REUNIAO, p.x, p.z)) return 'reuniao';
     const focusNow = this.focus?.participants.includes(id) && this.focusBlock()?.kind === 'foco';
     if (focusNow) return 'foco';
-    if (p.status === 'disp' && inside(REUNIAO, p.x, p.z)) return 'reuniao';
     return p.status as Status;
   }
 
@@ -367,7 +407,7 @@ export class OfficeApp {
   private setConv(c: Conv | null) {
     const before = this.conv;
     this.conv = c;
-    this.media.setMembers(c ? c.members : []);
+    this.media.setConv(c);
     this.refreshCallLabels();
     this.convView.render(before);
     this.shell.renderPeople();
@@ -385,10 +425,14 @@ export class OfficeApp {
   refreshCallLabels() {
     const mine = new Set(this.conv?.members ?? []);
     const feeds = this.conv ? this.media.feeds(this.conv.members, this.me) : [];
+    // cadeado sobre quem está numa conversa reservada
+    const locked = new Set(this.convs.filter((c) => c.locked).flatMap((c) => c.members));
     for (const [id, a] of this.avatars) {
       const f = feeds.find((x) => x.id === id);
       a.inCall = mine.has(id);
       a.micOn = mine.has(id) ? !!f?.micOn : false;
+      a.locked = locked.has(id);
+      a.announcing = this.announce?.by === id;
       a.speaking = !!f?.speaking;
       a.refreshLabel();
     }
@@ -612,6 +656,7 @@ export class OfficeApp {
       this.slow = t;
       this.shell.everySecond();
       this.checkStatusExpiry();
+      this.syncAnnounce();
       this.radioPlayer.update();
       this.refreshTv();
     }
@@ -641,7 +686,30 @@ export class OfficeApp {
   // ---------- objetos interativos ----------
   // Interage-se clicando no próprio objeto: ao passar o mouse ele ganha contorno e véu da cor
   // de destaque, e uma dica perto do cursor diz o que o clique faz.
+  /** Rótulos fixos sobre os pontos do hub (placas em perspectiva não se leem no zoom padrão). */
+  private hubTags: CSS2DObject[] = [];
+  private doorTag: HTMLElement | null = null;
+  private setupHubTags() {
+    const hub = this.world.spaces.hub;
+    const spots: [string, string, string][] = [['cafe', 'coffee', 'Café'], ['jogo', 'smile', 'Jogo da velha'], ['sugestoes', 'bulb', 'Caixa de sugestões'], ['door:hub-reuniao', 'screen', 'Sala de reunião'], ['door:hub-sala', 'users', 'Sala da equipe']];
+    for (const [id, ic, label] of spots) {
+      const it = hub.interactives.find((i) => i.id === id);
+      if (!it) continue;
+      const el = document.createElement('div');
+      el.className = 'place-tag';
+      el.innerHTML = `${icon(ic)}<b>${label}</b><small></small>`;
+      const obj = new CSS2DObject(el);
+      const c = it.box.getCenter(new THREE.Vector3());
+      obj.position.set(c.x, it.box.max.y + 0.2, c.z);
+      obj.center.set(0.5, 1);
+      this.sc.scene.add(obj);
+      this.hubTags.push(obj);
+      if (id === 'door:hub-reuniao') this.doorTag = el;
+    }
+  }
+
   private setupInteractives() {
+    this.setupHubTags();
     this.sc.scene.add(this.highlight.group);
     this.highlight.setColor(this.sc.accent());
     this.sc.onTheme = () => this.highlight.setColor(this.sc.accent());
@@ -676,6 +744,14 @@ export class OfficeApp {
       if (d < bd) { bd = d; best = s; }
     }
     return best;
+  }
+
+  private describePerson(id: string) {
+    const s = this.displayStatus(id);
+    const conv = this.convs.find((c) => c.members.includes(id));
+    const free = s === 'disp' && !conv;
+    const hint = conv?.locked && !conv.members.includes(this.me) ? 'Conversa reservada · clique para pedir para entrar' : free ? 'Clique para conversar' : 'Clique para ver as opções';
+    return { title: `${this.shortName(id)} · ${conv && s === 'disp' ? 'Em conversa' : STATUS_LABEL[s]}`, hint };
   }
 
   /** Título e ação mostrados na dica, conforme o estado atual. */
@@ -726,8 +802,10 @@ export class OfficeApp {
     this.highlight.setPixels(3, (cam.top - cam.bottom) / cam.zoom / Math.max(1, this.sc.renderer.domElement.clientHeight));
     this.sc.renderer.domElement.style.cursor = person || hov ? 'pointer' : '';
     const tip = this.hoverTip;
-    if (hov) {
-      const d = this.describe(hov.it);
+    // sobre um colega, a mesma dica dos objetos: quem é, como está e o que o clique faz
+    const pd = person ? this.describePerson(person) : null;
+    if (hov || pd) {
+      const d = pd ?? this.describe(hov!.it);
       tip.innerHTML = d.title ? `<b>${esc(d.title)}</b><span>${esc(d.hint)}</span>` : `<span>${esc(d.hint)}</span>`;
       tip.hidden = false;
       // perto da borda direita ou de baixo, a dica abre para o outro lado
@@ -899,12 +977,78 @@ export class OfficeApp {
     if (me?.seat) me.leaveSeat(this.space.nav);
   }
 
-  // sem conexão de mídia, o aviso fixo de conexão já explica e oferece "Tentar de novo"
+  // sem conexão de mídia, o aviso fixo de conexão já explica e oferece "Tentar de novo";
+  // fora de conversa não há com quem falar: microfone e câmera ligam dentro de uma
   async toggleMic() {
+    if (!this.conv) return this.notify.toast('O microfone liga dentro de uma conversa. Chegue perto de alguém ou entre na sala de reunião.', { log: false, ic: 'micOff', key: 'nomedia' });
     try { await this.media.setMic(!this.media.mic); } catch (e) { if (this.media.state !== 'failed') this.notify.mediaError(e, 'microfone'); }
   }
   async toggleCam() {
+    if (!this.conv) return this.notify.toast('A câmera liga dentro de uma conversa. Chegue perto de alguém ou entre na sala de reunião.', { log: false, ic: 'camOff', key: 'nomedia' });
     try { await this.media.setCam(!this.media.cam); } catch (e) { if (this.media.state !== 'failed') this.notify.mediaError(e, 'câmera'); }
+  }
+
+  // ---------- pedidos, avisos de disponibilidade e conversa reservada ----------
+  knock(to: string, text: string) {
+    this.send({ t: 'knock', to, text });
+    this.pendingKnocks.set(to, Date.now());
+    this.shell.renderPeople();
+  }
+  cancelKnock(to: string) {
+    this.send({ t: 'knockCancel', to });
+    this.pendingKnocks.delete(to);
+    this.shell.renderPeople();
+    this.refreshPersonPanel(to);
+  }
+  private knockExpired(to: string) {
+    this.pendingKnocks.delete(to);
+    this.shell.renderPeople();
+    this.refreshPersonPanel(to);
+    this.notify.toast(`${this.name(to)} não respondeu ao pedido para falar.`, { who: to, actions: [{ label: 'Deixar um bilhete', primary: true, run: () => this.panels.openPerson(to, 'note') }, { label: 'Fechar', run: () => {} }] });
+  }
+  watch(target: string, kind: 'free' | 'arrive', on: boolean) {
+    this.send({ t: 'watch', target, kind, on });
+    if (on) this.watching.set(target, kind); else this.watching.delete(target);
+    this.refreshPersonPanel(target);
+  }
+  private watchHit(target: string, kind: 'free' | 'arrive') {
+    this.watching.delete(target);
+    this.refreshPersonPanel(target);
+    this.notify.watchHit(target, kind);
+  }
+  refreshPersonPanel(id: string) {
+    if (this.panels.showing('pessoa', id)) this.panels.refresh('pessoa');
+  }
+  lockConv(locked: boolean) { this.send({ t: 'convLock', locked }); }
+
+  // ---------- anúncio para a sala ----------
+  private setAnnounce(a: Announce | null) {
+    this.announce = a;
+    this.refreshCallLabels();
+    this.syncAnnounce();
+    this.shell.renderDock();
+    this.shell.renderAnnounce();
+    this.refreshAllPeople();
+  }
+  /** Entra ou sai da sala do anúncio conforme o ambiente e o estado da pessoa (roda a cada segundo). */
+  syncAnnounce() {
+    const a = this.announce, p = this.myPresence;
+    const st = this.displayStatus(this.me);
+    const speaker = !!a && a.by === this.me;
+    const hears = !!a && !!p && areaAt(p.x, p.z)?.id === a.space && (speaker || (st !== 'foco' && st !== 'afk' && this.conv?.kind !== 'room' && this.conv?.kind !== 'direct'));
+    // uma tentativa por anúncio: se a mídia falhar, não insiste a cada segundo
+    if (hears && !this.media.announcing && this.annTried !== a!.until) {
+      this.annTried = a!.until;
+      this.media.joinAnnounce(speaker).catch((e) => {
+        if (speaker) { this.send({ t: 'announceStop' }); this.notify.mediaError(e, 'microfone'); }
+      });
+    } else if (!hears && this.media.announcing) this.media.leaveAnnounce();
+  }
+  private annTried = 0;
+  toggleAnnounce() {
+    if (this.announce?.by === this.me) return this.send({ t: 'announceStop' });
+    if (this.announce) return this.notify.toast(`${this.name(this.announce.by)} já está falando para ${this.announce.space === 'sala' ? 'a sala' : 'o hub'}.`, { log: false });
+    this.send({ t: 'announceStart' });
   }
   async toggleScreen() {
     if (!this.conv && !this.media.screen) return this.notify.toast('Entre numa conversa para apresentar a tela.', { log: false });
@@ -961,6 +1105,7 @@ export class OfficeApp {
     this.sc.refreshShadows();
     if (!quiet && by && by !== this.me && wasOpen !== open) this.notify.toast(`${this.name(by)} ${open ? 'abriu' : 'fechou'} a porta da sala de reunião.`);
     this.panels.refresh('porta');
+    this.convView.render();
   }
 
   /** Porta fechada vira parede para quem está fora e não foi autorizado; quem está dentro sempre sai. */
@@ -1032,6 +1177,11 @@ export class OfficeApp {
     const room = this.convs.find((c) => c.kind === 'room');
     const n = [...this.presence.values()].filter((p) => inside(REUNIAO, p.x, p.z)).length;
     const sub = n ? `${n} ${n === 1 ? 'pessoa' : 'pessoas'} na chamada${this.doorOpen ? '' : ' · porta fechada'}` : 'Livre';
+    // o rótulo da porta, no hub, diz o mesmo e herda a cor da luz
+    if (this.doorTag) {
+      this.doorTag.classList.toggle('shut', !this.doorOpen);
+      this.doorTag.querySelector('small')!.textContent = n ? `${n} dentro · ${this.doorOpen ? 'porta aberta' : 'porta fechada'}` : this.doorOpen ? 'livre' : 'porta fechada';
+    }
     const key = `${sub}|${!!room}`;
     if (this.world.tv.userData.key === key) return;
     this.world.tv.userData.key = key;

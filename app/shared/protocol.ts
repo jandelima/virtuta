@@ -36,7 +36,12 @@ export interface Conv {
   id: string;
   kind: 'prox' | 'room' | 'direct';
   members: string[];
+  /** Conversa reservada: quem chega perto não entra sozinho, precisa pedir. */
+  locked?: boolean;
 }
+
+/** Anúncio para o ambiente inteiro: quem fala, em que ambiente e até quando. */
+export interface Announce { by: string; space: string; until: number }
 
 export interface Note { id: number; from: string; fromName: string; to: string; text: string; createdAt: number; readAt: number | null }
 
@@ -87,7 +92,17 @@ export type ClientMsg =
   | { t: 'react'; emoji: string }
   | { t: 'leaveConv' }
   | { t: 'knock'; to: string; text: string }
-  | { t: 'knockReply'; to: string; accept: boolean }
+  | { t: 'knockCancel'; to: string }
+  /** `later`: "Te chamo quando terminar" (recusa agora e avisa quando ficar livre). */
+  | { t: 'knockReply'; to: string; accept: boolean; later?: boolean }
+  /** Avisar quando a pessoa ficar livre ou chegar; `on: false` desiste do aviso. */
+  | { t: 'watch'; target: string; kind: 'free' | 'arrive'; on: boolean }
+  | { t: 'convLock'; locked: boolean }
+  /** Pedir para entrar na conversa reservada de que `to` participa. */
+  | { t: 'convAsk'; to: string }
+  | { t: 'convAdmit'; who: string; accept: boolean }
+  | { t: 'announceStart' }
+  | { t: 'announceStop' }
   | { t: 'door'; open: boolean }
   | { t: 'doorKnock' }
   | { t: 'doorReply'; who: string; accept: boolean }
@@ -107,7 +122,8 @@ export type ClientMsg =
   | { t: 'radioAdd'; url: string }
   | { t: 'radioSkip'; itemId: number }
   | { t: 'radioEnded'; itemId: number }
-  | { t: 'radioError'; itemId: number }
+  /** `code`: código de erro do player do YouTube (2, 100, 101 e 150 são definitivos). */
+  | { t: 'radioError'; itemId: number; code?: number }
   | { t: 'radioRemove'; itemId: number }
   | { t: 'focusStart'; blocks: FocusBlock[] }
   | { t: 'focusJoin' }
@@ -149,10 +165,25 @@ export type ServerMsg =
   | { t: 'convs'; convs: Conv[] }
   | { t: 'react'; from: string; emoji: string }
   | { t: 'knock'; from: string; text: string }
-  | { t: 'knockReply'; from: string; accept: boolean }
+  | { t: 'knockReply'; from: string; accept: boolean; later?: boolean }
+  /** O pedido de `from` saiu: cancelado por quem pediu ou vencido. */
+  | { t: 'knockGone'; from: string; reason: 'cancel' | 'expire' }
+  /** O pedido feito a `to` venceu sem resposta. */
+  | { t: 'knockExpired'; to: string }
+  /** Quem pediu um aviso recebe quando `target` fica livre ou chega. */
+  | { t: 'watchHit'; target: string; kind: 'free' | 'arrive' }
+  /** Quem é observado fica sabendo (`on`) ou deixa de ser observado. */
+  | { t: 'watched'; by: string; kind: 'free' | 'arrive'; on: boolean }
+  /** Você disse que chamaria `who` quando terminasse, e ficou livre. */
+  | { t: 'remind'; who: string }
+  | { t: 'convAsk'; who: string }
+  | { t: 'convAskResolved'; who: string; accept: boolean; by: string }
+  | { t: 'announce'; announce: Announce | null }
+  | { t: 'guestResolved'; guest: string; accept: boolean; by: string }
+  | { t: 'radioAddResult'; ok: boolean; text: string }
   | { t: 'door'; open: boolean; by: string }
   | { t: 'doorKnock'; who: string }
-  | { t: 'doorReply'; accept: boolean }
+  | { t: 'doorReply'; accept: boolean; expired?: boolean }
   /** Um pedido para entrar na reunião foi respondido: some da tela de quem está dentro. */
   | { t: 'doorResolved'; who: string; accept: boolean; by: string }
   | { t: 'note'; note: Note }

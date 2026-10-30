@@ -112,6 +112,10 @@ export const sessions = {
     return s;
   },
   delete: (token: string) => db.prepare('DELETE FROM sessions WHERE token = ?').run(token),
+  /** Sessão de integrante se renova com o uso: quem entra todo dia nunca é deslogado. */
+  renew(token: string, days: number) {
+    db.prepare('UPDATE sessions SET expires_at = ? WHERE token = ? AND guest = 0 AND expires_at < ?').run(now() + days * 864e5, token, now() + (days - 1) * 864e5);
+  },
   deleteForUser: (userId: string) => db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId),
   purge: () => db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now()),
 };
@@ -133,6 +137,7 @@ export const invites = {
 export const guests = {
   create: (id: string, invite: string, name: string) => db.prepare('INSERT INTO guests (id, invite, name, created_at) VALUES (?, ?, ?, ?)').run(id, invite, name, now()),
   get: (id: string) => db.prepare('SELECT * FROM guests WHERE id = ?').get(id) as { id: string; invite: string; name: string } | undefined,
+  byInvite: (invite: string) => (db.prepare('SELECT id FROM guests WHERE invite = ?').all(invite) as { id: string }[]).map((g) => g.id),
 };
 
 // ---------- bilhetes ----------

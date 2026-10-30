@@ -4,7 +4,7 @@ import { extname, join, normalize } from 'node:path';
 import { WebSocketServer } from 'ws';
 import { config, googleEnabled, secureCookies } from './config';
 import { guests, invites, sessions, settings, suggestions, users } from './db';
-import { SESSION_COOKIE, googleAuthUrl, googleExchange, loginGuest, loginUser, mediaToken, parseCookies, publicUser, randomId, whoIs } from './auth';
+import { SESSION_COOKIE, googleAuthUrl, googleExchange, loginGuest, loginUser, parseCookies, publicUser, randomId, whoIs } from './auth';
 import { Office } from './office';
 import { DESKS } from '../../shared/layout';
 import type { SuggestionStatus } from '../../shared/protocol';
@@ -102,9 +102,11 @@ const routes: Record<string, Handler> = {
   'GET /api/media-token': (req, res) => {
     const who = whoIs(req);
     if (!who) return json(res, 401, {});
-    const p = office.people.get(who.id);
-    if (who.guest && (!p || p.presence.waiting)) return json(res, 403, {});
-    json(res, 200, { url: config.livekit.url, token: mediaToken(who.id, office.nameOf(who.id)) });
+    // só a sala da conversa em que a pessoa está agora (ou do anúncio que ela pode ouvir)
+    const kind = new URL(req.url ?? '/', 'http://x').searchParams.get('for') === 'announce' ? 'announce' : 'conv';
+    const grant = office.mediaGrant(who.id, kind);
+    if (!grant) return json(res, 409, { error: 'Fora de conversa' });
+    json(res, 200, { url: config.livekit.url, ...grant });
   },
 
   // convites de visitantes
@@ -187,6 +189,8 @@ const routes: Record<string, Handler> = {
     if (!isAdmin(req)) return json(res, 403, {});
     const b = await body<{ token: string }>(req);
     invites.revoke(b.token);
+    // quem entrou com esse convite perde o acesso agora, não só na próxima visita
+    for (const g of guests.byInvite(b.token)) { sessions.deleteForUser(g); office.dropGuest(g); }
     json(res, 200, { ok: true });
   },
   'POST /api/admin/suggestion': async (req, res) => {

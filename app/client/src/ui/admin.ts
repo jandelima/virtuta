@@ -31,9 +31,10 @@ export async function openAdmin(app: OfficeApp) {
   let sgAll = false;
   let data: AdminData;
 
-  const close = () => { host.remove(); document.body.classList.remove('modal-open'); };
+  // o ouvinte do Esc sai junto, qualquer que seja o jeito de fechar
+  const close = () => { host.remove(); document.body.classList.remove('modal-open'); removeEventListener('keydown', onKey); };
   host.addEventListener('click', (e) => { if (e.target === host || (e.target as HTMLElement).closest('[data-close]')) close(); });
-  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { close(); removeEventListener('keydown', onKey); } };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
   addEventListener('keydown', onKey);
 
   const load = async () => {

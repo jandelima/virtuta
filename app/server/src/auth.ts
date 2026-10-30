@@ -1,4 +1,4 @@
-import { randomBytes, createHmac } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { config, googleEnabled } from './config';
 import { guests, invites, sessions, users, type UserRow } from './db';
@@ -30,9 +30,12 @@ export function whoIs(req: IncomingMessage): Who | null {
   if (!token) return null;
   const s = sessions.get(token);
   if (!s) return null;
-  if (s.guest) return guests.get(s.user_id) ? { id: s.user_id, guest: true, token } : null;
+  // visitante: o convite precisa continuar valendo (revogado ou vencido, o acesso acaba)
+  if (s.guest) { const g = guests.get(s.user_id); return g && invites.valid(g.invite) ? { id: s.user_id, guest: true, token } : null; }
   const u = users.get(s.user_id);
-  return u && u.active ? { id: u.id, guest: false, token } : null;
+  if (!u || !u.active) return null;
+  sessions.renew(token, 30);
+  return { id: u.id, guest: false, token };
 }
 
 // ---------- aparência padrão e cor de cada pessoa ----------
@@ -137,21 +140,3 @@ export async function googleExchange(code: string) {
   return { email: claims.email, name: claims.name || claims.email.split('@')[0] };
 }
 
-// ---------- LiveKit ----------
-const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
-
-/** Token de acesso ao LiveKit (JWT HS256), sem depender do SDK do servidor. */
-export function mediaToken(identity: string, name: string, room = 'escritorio') {
-  const nowS = Math.floor(Date.now() / 1000);
-  const head = b64({ alg: 'HS256', typ: 'JWT' });
-  const body = b64({
-    iss: config.livekit.apiKey,
-    sub: identity,
-    name,
-    nbf: nowS - 10,
-    exp: nowS + 6 * 3600,
-    video: { room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true },
-  });
-  const sig = createHmac('sha256', config.livekit.apiSecret).update(`${head}.${body}`).digest('base64url');
-  return `${head}.${body}.${sig}`;
-}

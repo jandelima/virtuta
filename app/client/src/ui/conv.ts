@@ -55,9 +55,13 @@ export class ConvView {
     if (!c) return '';
     const m = app.media;
     const sid = (t: Track | null) => (t ? t.sid ?? 'x' : '');
-    return JSON.stringify([c.id, c.kind, this.stageOpen, m.mic, m.cam, m.screen, m.state, this.feeds().map((f) => [f.id, f.micOn, sid(f.camera), sid(f.screen), !!app.presence.get(f.id)?.hand])]);
+    return JSON.stringify([c.id, c.kind, c.locked, this.stageOpen, this.collapsed, this.micDismissed === c.id, app.doorOpen, app.notify.pending.filter((h) => h.key?.startsWith('door-')).length, m.mic, m.cam, m.screen, m.state, this.feeds().map((f) => [f.id, f.micOn, sid(f.camera), sid(f.screen), !!app.presence.get(f.id)?.hand])]);
   }
   private lastShape = '';
+  /** Cartão recolhido numa pílula (a pessoa escolhe; vale até a próxima conversa). */
+  private collapsed = false;
+  /** Conversa em que a pessoa dispensou o aviso de microfone desligado. */
+  private micDismissed = '';
 
   /** Chamado a cada mudança de mídia (várias por segundo quando muda quem fala). */
   update() {
@@ -72,7 +76,8 @@ export class ConvView {
   private controls() {
     const m = this.app.media;
     const b = (id: string, ic: string, label: string, cls: string) => `<button class="cc ${cls}" data-cc="${id}" aria-label="${label}" title="${label}">${icon(ic)}</button>`;
-    return b('mic', m.mic ? 'mic' : 'micOff', m.mic ? 'Desligar microfone (M)' : 'Ligar microfone (M)', m.mic ? 'on' : '') +
+    // o mesmo vermelho de alerta do dock: sem microfone dentro de uma conversa
+    return b('mic', m.mic ? 'mic' : 'micOff', m.mic ? 'Desligar microfone (M)' : 'Ligar microfone (M)', m.mic ? 'on' : 'alert') +
       b('cam', m.cam ? 'cam' : 'camOff', m.cam ? 'Desligar câmera (V)' : 'Ligar câmera (V)', m.cam ? 'on' : '') +
       b('screen', 'screen', m.screen ? 'Parar de compartilhar' : 'Compartilhar tela', m.screen ? 'share' : '');
   }
@@ -95,7 +100,8 @@ export class ConvView {
       this.videoEls.clear();
       return;
     }
-    if (before?.id !== c.id) this.seenShares.clear();
+    // conversa nova (só quando quem chama informa a anterior; os redesenhos não contam)
+    if (before !== undefined && before?.id !== c.id) { this.seenShares.clear(); this.collapsed = false; }
     const feeds = this.feeds();
     const shares = feeds.filter((f) => f.screen);
     // abre a apresentação quando alguém da conversa começa a compartilhar
@@ -110,13 +116,40 @@ export class ConvView {
     const title = c.kind === 'room' ? 'Sala de reunião' : c.kind === 'direct' ? 'Conversa a pedido' : 'Conversa por proximidade';
     const presenting = shares.map((s) => (s.id === app.me ? 'você' : app.name(s.id))).join(' e ');
     this.panel.hidden = this.stageOpen;
-    this.panel.innerHTML = `<div class="conv-h"><span class="pulse"></span><b>${title}</b><small>${c.members.length} ${c.members.length === 1 ? 'pessoa' : 'pessoas'}${presenting ? ` · ${esc(presenting)} apresentando` : ''}</small>${shares.length ? `<button id="openStage">${icon('maximize')}Apresentação</button>` : ''}<button id="leaveConv">${c.kind === 'room' ? 'Sair da sala' : 'Sair da conversa'}</button></div><div class="tiles" id="convTiles"></div><div class="conv-ctl">${this.controls()}</div>`;
+    this.panel.classList.toggle('collapsed', this.collapsed);
+    const others = c.members.length - 1;
+    if (this.collapsed) {
+      // recolhido: uma pílula com quem fala e o microfone, que abre de novo ao clicar
+      const speaking = feeds.some((f) => f.speaking && f.id !== app.me);
+      this.panel.innerHTML = `<button class="conv-pill" id="convOpen" aria-label="Mostrar a conversa"><span class="pulse${speaking ? ' talk' : ''}"></span><b>${title}</b><small>${c.members.length} ${c.members.length === 1 ? 'pessoa' : 'pessoas'}</small>${icon('chev')}</button><span class="pill-ctl">${this.controls()}</span>`;
+      this.panel.querySelector('#convOpen')!.addEventListener('click', () => { this.collapsed = false; this.render(); });
+      this.bindControls(this.panel);
+      return;
+    }
+    // sem microfone numa conversa, os dois lados acham que estão falando: o cartão avisa
+    const micNote = !app.media.mic && others > 0 && this.micDismissed !== c.id && app.media.state !== 'failed'
+      ? `<div class="mic-note">${icon('micOff')}<span>Seu microfone está desligado</span><button id="micOn">Ligar (M)</button><button class="x" id="micX" aria-label="Dispensar">${icon('x')}</button></div>` : '';
+    // na sala de reunião, a porta se controla daqui, e os pedidos de entrada aparecem aqui mesmo
+    const doorAsks = c.kind === 'room' ? app.notify.pending.filter((h) => h.key?.startsWith('door-')) : [];
+    const door = c.kind === 'room'
+      ? `<div class="conv-door"><button id="doorToggle" class="${app.doorOpen ? '' : 'shut'}">${icon(app.doorOpen ? 'unlock' : 'lock')}${app.doorOpen ? 'Porta aberta · Fechar' : 'Porta fechada · Abrir'}</button>${doorAsks.map((h) => `<span class="ask">${app.shell.avatarImg(h.key!.slice(5), 22)}${esc(app.shortName(h.key!.slice(5)))} quer entrar<button data-letin="${h.key!.slice(5)}">Deixar entrar</button></span>`).join('')}</div>` : '';
+    const lock = c.kind !== 'room' ? `<button id="convLock" class="${c.locked ? 'on' : ''}" title="${c.locked ? 'Quem chega perto não entra sozinho. Clique para abrir a conversa' : 'Reservar: quem chegar perto precisa pedir para entrar'}">${icon(c.locked ? 'lock' : 'unlock')}${c.locked ? 'Reservada' : 'Reservar'}</button>` : '';
+    this.panel.innerHTML = `<div class="conv-h"><span class="pulse"></span><b>${title}</b><small>${c.members.length} ${c.members.length === 1 ? 'pessoa' : 'pessoas'}${presenting ? ` · ${esc(presenting)} apresentando` : ''}</small>${shares.length ? `<button id="openStage">${icon('maximize')}Apresentação</button>` : ''}${lock}<button id="leaveConv">${c.kind === 'room' ? 'Sair da sala' : 'Sair da conversa'}</button><button class="iconbtn sm2" id="convMin" aria-label="Recolher a conversa" title="Recolher">${icon('minus')}</button></div>${door}${micNote}<div class="tiles" id="convTiles"></div><div class="conv-ctl">${this.controls()}</div>`;
     const tiles = this.panel.querySelector('#convTiles')!;
     for (const f of shares) tiles.appendChild(this.tile(f, true));
     for (const f of feeds) tiles.appendChild(this.tile(f, false));
     this.panel.querySelector('#leaveConv')!.addEventListener('click', () => this.leave());
     this.bindControls(this.panel);
     this.panel.querySelector('#openStage')?.addEventListener('click', () => this.openStage());
+    this.panel.querySelector('#convMin')!.addEventListener('click', () => { this.collapsed = true; this.render(); });
+    this.panel.querySelector('#micOn')?.addEventListener('click', () => void app.toggleMic());
+    this.panel.querySelector('#micX')?.addEventListener('click', () => { this.micDismissed = c.id; this.render(); });
+    this.panel.querySelector('#convLock')?.addEventListener('click', () => app.lockConv(!c.locked));
+    this.panel.querySelector('#doorToggle')?.addEventListener('click', () => app.send({ t: 'door', open: !app.doorOpen }));
+    this.panel.querySelectorAll<HTMLElement>('[data-letin]').forEach((b) => b.addEventListener('click', () => {
+      app.send({ t: 'doorReply', who: b.dataset.letin!, accept: true });
+      app.notify.dismiss(`door-${b.dataset.letin}`);
+    }));
     if (this.stageOpen) this.renderStage(feeds);
   }
 

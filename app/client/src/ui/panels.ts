@@ -41,6 +41,7 @@ export class Panels {
   }
 
   close() {
+    this.radioMsg = null;
     this.runCleanup();
     this.d.hidden = true;
     this.kind = null;
@@ -84,40 +85,84 @@ export class Panels {
   }
 
   // ---------- pessoa ----------
-  openPerson(id: string) {
+  /** Se a gaveta mostra este painel agora (para atualizar quando o estado muda). */
+  showing(kind: Kind, arg?: string | number) {
+    return !this.d.hidden && this.kind === kind && (arg === undefined || this.arg === arg);
+  }
+
+  /**
+   * Painel de um colega. A ação principal depende do estado dele: livre, ir conversar; ocupado,
+   * pedir para falar (e pedir aviso quando ficar livre); offline, bilhete (e aviso quando chegar);
+   * em conversa reservada, pedir para entrar.
+   */
+  openPerson(id: string, focus: 'note' | null = null) {
     const app = this.app;
     const u = app.users.get(id);
     if (!u) return;
     const online = app.presence.has(id);
     const s = online ? app.displayStatus(id) : 'afk';
     const member = !app.guest && u.role !== 'guest';
-    const busy = s === 'foco' || s === 'afk';
     const first = esc(u.name.split(' ')[0]);
     const hand = online && app.presence.get(id)?.hand;
+    const conv = app.convs.find((c) => c.members.includes(id));
+    const reserved = !!conv?.locked && !conv.members.includes(app.me);
+    const free = online && s === 'disp' && !conv;
+    const pending = app.pendingKnocks.get(id);
+    const watching = app.watching.get(id);
+    const knockForm = pending
+      ? `<div class="waiting">${icon('hand')}<span>Aguardando ${first} responder…<small>O pedido vence em 2 minutos.</small></span><button class="btn soft" id="knockCancel">Cancelar</button></div>`
+      : `<div class="form inline"><input id="knockText" maxlength="120" placeholder="Assunto (opcional)"/><button class="btn ${free ? 'soft' : 'primary'}" id="knock">${icon('hand')}Pedir para falar</button></div>`;
+    const watch = (kind: 'free' | 'arrive', label: string) => member && !app.guest
+      ? `<button class="btn soft wide${watching === kind ? ' on' : ''}" id="watch" data-kind="${kind}">${icon('bell')}${watching === kind ? `Vou avisar você${kind === 'free' ? ' quando ficar livre' : ' quando chegar'} · desistir` : label}</button>` : '';
+    let main = '';
+    if (!online) {
+      main = `<p class="hint-box">${icon('note')}${first} está offline. Um bilhete na mesa fica guardado até a volta.</p>${watch('arrive', `Avisar quando ${first} chegar`)}`;
+    } else if (reserved) {
+      main = `<p class="hint-box">${icon('lock')}${first} está numa conversa reservada. Quem chega perto não entra sozinho.</p>
+        <button class="btn primary wide" id="convAsk">${icon('hand')}Pedir para entrar na conversa</button>
+        <h4>Ou depois</h4>${watch('free', `Avisar quando ${first} ficar livre`)}`;
+    } else if (free) {
+      main = `<button class="btn primary wide" id="goto">${icon('chat')}Conversar com ${first}</button>
+        <p class="muted">Você vai até ${first} e a conversa abre quando chegarem perto.</p>
+        <h4>Ou peça antes</h4>${knockForm}`;
+    } else {
+      const why = s === 'foco' ? 'Em foco: o pedido chega sem som e pode ser recusado.' : s === 'afk' ? 'Ausente no momento.' : s === 'reuniao' ? 'Em reunião.' : 'Em conversa agora.';
+      main = `<p class="hint-box">${icon(s === 'foco' ? 'focus' : s === 'afk' ? 'coffee' : s === 'reuniao' ? 'screen' : 'chat')}${why}</p>
+        <h4>Posso falar?</h4>${knockForm}${watch('free', `Avisar quando ${first} ficar livre`)}
+        <button class="btn soft wide" id="goto">${icon('locate')}Ir até ${first}</button>`;
+    }
     // o cabeçalho já traz nome e situação; o retrato ganha só o que o cabeçalho não diz
     this.show(`<div class="dh"><span class="av" style="width:40px;height:40px">${app.shell.avatarImg(id, 40)}<i class="sdot" style="background:${online ? STATUS_COLOR[s] : 'transparent'};${online ? '' : 'box-shadow: inset 0 0 0 2px var(--mut)'}"></i></span><div><b>${esc(u.name)}</b><small>${esc(app.statusLine(id))}</small></div>${u.role === 'guest' ? '<span class="chip">Visitante</span>' : ''}${hand ? '<span class="chip open">✋ Mão levantada</span>' : ''}<button class="iconbtn" data-close aria-label="Fechar">${icon('x')}</button></div>
       <div class="db2">
-        ${online && busy ? `<p class="hint-box">${icon(s === 'foco' ? 'focus' : 'coffee')}${s === 'foco' ? 'Em foco: o pedido chega sem som e pode ser recusado.' : 'Ausente no momento.'}</p>` : ''}
-        ${online ? `<h4>Posso falar?</h4>
-        <div class="form inline"><input id="knockText" maxlength="120" placeholder="Assunto (opcional)"/><button class="btn primary" id="knock">${icon('hand')}Pedir para falar</button></div>
-        <button class="btn soft wide" id="goto">${icon('locate')}Ir até ${first}</button>` : `<p class="hint-box">${icon('note')}${first} está offline. Um bilhete na mesa fica guardado até a volta.</p>`}
-        ${member ? `<h4>Bilhete na mesa</h4>${online ? '<p class="muted">Fica guardado na mesa, mesmo se a pessoa sair.</p>' : ''}<textarea id="noteText" maxlength="600" placeholder="Escreva um bilhete para ${first}"></textarea><button class="btn ${online ? 'soft' : 'primary'}" id="sendNote">${icon('note')}Deixar bilhete</button>` : ''}
+        ${main}
+        ${member ? `<h4>Bilhete na mesa</h4>${online ? '<p class="muted">Fica guardado na mesa, mesmo se a pessoa sair.</p>' : ''}<textarea id="noteText" maxlength="600" placeholder="Escreva um bilhete para ${first} (Ctrl+Enter envia)"></textarea><button class="btn ${online ? 'soft' : 'primary'}" id="sendNote">${icon('note')}Deixar bilhete</button>` : ''}
       </div>`, (d) => {
       const knock = () => {
-        app.send({ t: 'knock', to: id, text: d.querySelector<HTMLInputElement>('#knockText')!.value.trim() });
-        app.notify.toast(`Pedido enviado para ${u.name}.`, { log: false });
-        this.close();
+        app.knock(id, d.querySelector<HTMLInputElement>('#knockText')!.value.trim());
+        this.openPerson(id);
       };
       d.querySelector('#knock')?.addEventListener('click', knock);
       d.querySelector('#knockText')?.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') knock(); });
+      d.querySelector('#knockCancel')?.addEventListener('click', () => app.cancelKnock(id));
+      d.querySelector<HTMLElement>('#watch')?.addEventListener('click', (e) => {
+        const kind = (e.currentTarget as HTMLElement).dataset.kind as 'free' | 'arrive';
+        app.watch(id, kind, watching !== kind);
+      });
+      d.querySelector('#convAsk')?.addEventListener('click', () => {
+        app.send({ t: 'convAsk', to: id });
+        app.notify.toast(`Pedido enviado para a conversa de ${u.name.split(' ')[0]}.`, { log: false });
+        this.close();
+      });
       d.querySelector('#goto')?.addEventListener('click', () => {
         const p = app.presence.get(id);
         if (p) app.walkTo(p.x + 0.7, p.z + 0.4);
         this.close();
       });
       d.querySelector('#sendNote')?.addEventListener('click', () => this.sendNote(id, d));
+      d.querySelector('#noteText')?.addEventListener('keydown', (e) => { const k = e as KeyboardEvent; if (k.key === 'Enter' && (k.ctrlKey || k.metaKey)) this.sendNote(id, d); });
       // a caixa da ação principal já recebe o cursor
-      d.querySelector<HTMLElement>(online ? '#knockText' : '#noteText')?.focus();
+      const target = focus === 'note' || !online ? '#noteText' : free ? '#goto' : '#knockText';
+      d.querySelector<HTMLElement>(target)?.focus();
     }, 'pessoa', id);
   }
 
@@ -147,6 +192,7 @@ export class Panels {
         <button class="btn primary" id="sendNote">${icon('note')}Deixar bilhete na mesa</button>
       </div>`, (d) => {
       d.querySelector('#sendNote')!.addEventListener('click', () => this.sendNote(owner.id, d));
+      d.querySelector('#noteText')!.addEventListener('keydown', (e) => { const k = e as KeyboardEvent; if (k.key === 'Enter' && (k.ctrlKey || k.metaKey)) this.sendNote(owner.id, d); });
       d.querySelector<HTMLElement>('#noteText')!.focus();
     }, 'mesa', index);
   }
@@ -200,6 +246,11 @@ export class Panels {
     this.show(`${head(open ? 'unlock' : 'lock', 'Porta da sala de reunião', open ? 'Aberta: quem entra participa da chamada' : 'Fechada: para entrar, é preciso pedir')}
       <div class="db2">
         <p class="muted">${insideRoom ? 'Quem está dentro pode fechar a porta. Com ela fechada, quem chegar bate e alguém de dentro autoriza.' : open ? 'Entre para participar da chamada da sala.' : app.doorAllowed ? 'Sua entrada foi autorizada.' : 'A reunião está com a porta fechada.'}</p>
+        ${!insideRoom ? (() => {
+          // quem está do lado de fora vê quem está lá dentro antes de bater
+          const ids = [...app.presence.values()].filter((p) => !p.waiting && inside(REUNIAO, p.x, p.z)).map((p) => p.id);
+          return ids.length ? `<h4>Na sala agora (${ids.length})</h4><div class="faces big">${ids.map((x) => `<span title="${esc(app.name(x))}">${app.shell.avatarImg(x, 34)}</span>`).join('')}</div>` : '<p class="muted">Ninguém na sala agora.</p>';
+        })() : ''}
         ${insideRoom ? `<button class="btn primary wide" id="doorToggle">${icon(open ? 'lock' : 'unlock')}${open ? 'Fechar a porta' : 'Abrir a porta'}</button><button class="btn soft wide" id="doorOut">${icon('exit')}Sair para o hub</button>` : !open && !app.doorAllowed ? `<button class="btn primary wide" id="doorKnock">${icon('hand')}Bater na porta</button>` : `<button class="btn primary wide" id="doorIn">${icon('door')}Entrar</button>`}
       </div>`, (d) => {
       d.querySelector('#doorToggle')?.addEventListener('click', () => app.send({ t: 'door', open: !open }));
@@ -228,6 +279,7 @@ export class Panels {
       </div>`, (d) => {
       d.querySelectorAll<HTMLElement>('[data-admit]').forEach((b) => b.addEventListener('click', () => app.send({ t: 'admit', guest: b.dataset.admit!, accept: true })));
       d.querySelectorAll<HTMLElement>('[data-refuse]').forEach((b) => b.addEventListener('click', () => app.send({ t: 'admit', guest: b.dataset.refuse!, accept: false })));
+      d.querySelector('#gName')?.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') d.querySelector<HTMLButtonElement>('#gCreate')!.click(); });
       d.querySelector('#gCreate')?.addEventListener('click', async () => {
         const name = d.querySelector<HTMLInputElement>('#gName')!.value.trim() || 'Visitante';
         const r = await api.invite(name, Number(d.querySelector<HTMLSelectElement>('#gHours')!.value));
@@ -247,24 +299,42 @@ export class Panels {
     const del = (q: RadioItem) => (mine(q) ? `<button class="iconbtn sm show" data-rdel="${q.id}" aria-label="Tirar da programação" title="Tirar da programação">${icon('trash')}</button>` : '');
     this.show(`${head('radio', 'Rádio da equipe', `${r.listeners.length ? `${r.listeners.length} ${r.listeners.length === 1 ? 'pessoa ouvindo' : 'pessoas ouvindo'}` : 'Ninguém ouvindo'} · YouTube`)}
       <div class="db2">
-        <h4>Tocando agora</h4>
-        <div class="list">${r.current ? `<div class="li"><span class="lic">${icon('play')}</span><div><b>${esc(r.current.title)}</b><small>Adicionado por ${esc(r.current.addedBy)}</small></div>${del(r.current)}</div>` : '<p class="empty">Nada tocando. Adicione um link do YouTube.</p>'}</div>
+        <h4>${r.current && r.listeners.length ? 'Tocando agora' : 'Agora'}</h4>
+        <div class="list">${r.current ? `<div class="li"><span class="lic">${icon(r.listeners.length ? 'play' : 'pause')}</span><div><b>${esc(r.current.title)}</b><small>${r.listeners.length ? '' : 'Pausada (ninguém ouvindo) · '}Adicionado por ${esc(r.current.addedBy)}</small></div>${del(r.current)}</div>` : r.queue.length ? `<p class="empty">Pausada. A próxima, “${esc(r.queue[0].title)}”, começa quando alguém ligar “Ouvir”.</p>` : '<p class="empty">Nada tocando. Adicione um link do YouTube.</p>'}</div>
         <h4>Próximas</h4>
         <div class="list">${r.queue.map((q) => `<div class="li"><span class="lic">${icon('radio')}</span><div><b>${esc(q.title)}</b><small>Adicionado por ${esc(q.addedBy)}</small></div>${del(q)}</div>`).join('') || '<p class="empty">Fila vazia.</p>'}</div>
         <h4>Adicionar à programação</h4>
-        <div class="form"><input id="rUrl" placeholder="Link de vídeo ou transmissão do YouTube"/><button class="btn soft" id="rAdd">${icon('plus')}Adicionar</button></div>
+        <form class="form" id="rForm"><input id="rUrl" placeholder="Link de vídeo ou transmissão do YouTube"/><button class="btn soft" id="rAdd" ${this.radioBusy ? 'disabled' : ''}>${icon('plus')}${this.radioBusy ? 'Adicionando…' : 'Adicionar'}</button>${this.radioMsg ? `<small class="form-msg ${this.radioMsg.ok ? 'ok' : 'err'}">${esc(this.radioMsg.text)}</small>` : ''}</form>
         <p class="muted">A rádio toca dentro da sala da equipe, para quem ligou "Ouvir": todos na mesma música, no mesmo ponto, cada um com o seu volume. Ao sair da sala ela para e, ao voltar, retoma.</p>
       </div>
       <div class="df">${listening ? `<button class="btn soft" id="rSkip">${icon('skip')}Pular</button><button class="btn primary" id="rLeave">Desligar a rádio</button>` : `<button class="btn primary" id="rJoin">${icon('play')}Ouvir a rádio</button>`}</div>`, (d) => {
-      d.querySelector('#rAdd')!.addEventListener('click', () => {
+      // Enter envia; o botão espera a resposta do servidor (que consulta o YouTube) para não duplicar
+      d.querySelector('#rForm')!.addEventListener('submit', (e) => {
+        e.preventDefault();
         const url = d.querySelector<HTMLInputElement>('#rUrl')!.value.trim();
-        if (url) app.send({ t: 'radioAdd', url });
+        if (!url || this.radioBusy) return;
+        this.radioBusy = true;
+        this.radioMsg = null;
+        app.send({ t: 'radioAdd', url });
+        this.refresh('radio');
       });
       d.querySelectorAll<HTMLElement>('[data-rdel]').forEach((b) => b.addEventListener('click', () => app.send({ t: 'radioRemove', itemId: Number(b.dataset.rdel) })));
       d.querySelector('#rJoin')?.addEventListener('click', () => app.radioPlayer.join());
       d.querySelector('#rLeave')?.addEventListener('click', () => app.radioPlayer.leave());
       d.querySelector('#rSkip')?.addEventListener('click', () => r.current && app.send({ t: 'radioSkip', itemId: r.current.id }));
     }, 'radio');
+  }
+
+  private radioBusy = false;
+  private radioMsg: { ok: boolean; text: string } | null = null;
+  /** Resposta do servidor ao link enviado: o resultado aparece junto do campo. */
+  radioAdded(ok: boolean, text: string) {
+    this.radioBusy = false;
+    if (!this.showing('radio')) { this.radioMsg = null; return void this.app.notify.toast(text, { log: false }); }
+    this.radioMsg = { ok, text };
+    if (ok) { const f = this.d.querySelector<HTMLInputElement>('#rUrl'); if (f) f.value = ''; }
+    this.refresh('radio');
+    if (!ok) this.d.querySelector<HTMLInputElement>('#rUrl')?.select();
   }
 
   // ---------- café ----------
@@ -347,6 +417,7 @@ export class Panels {
         <div class="form"><input id="fMin" type="number" min="5" max="180" value="45"/><span class="muted">minutos de foco</span><button class="btn soft" id="fCustom">Começar</button></div>
       </div>`, (d) => {
       d.querySelectorAll<HTMLElement>('[data-i]').forEach((b) => b.addEventListener('click', () => { app.send({ t: 'focusStart', blocks: presets[Number(b.dataset.i)][1] }); this.close(); }));
+      d.querySelector('#fMin')!.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') d.querySelector<HTMLButtonElement>('#fCustom')!.click(); });
       d.querySelector('#fCustom')!.addEventListener('click', () => {
         const m = Math.min(180, Math.max(5, Number(d.querySelector<HTMLInputElement>('#fMin')!.value) || 45));
         app.send({ t: 'focusStart', blocks: [{ kind: 'foco', minutes: m }] });

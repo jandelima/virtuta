@@ -70,6 +70,12 @@ export function openBoard(app: OfficeApp, boardId: string) {
   };
   const removed = new Map<string, BoardElement>();
 
+  // um valor inválido (de um cliente antigo ou com defeito) não pode travar o quadro
+  const ok = (e: BoardElement) => [e.x, e.y, e.w ?? 0, e.h ?? 0, e.size ?? 0, e.z ?? 0, ...(e.points ?? [])].every((v) => typeof v === 'number' && Number.isFinite(v));
+  // depois de uma reconexão, o servidor precisa saber de novo que este quadro está aberto
+  app.boardReopen = () => app.send({ t: 'boardOpen', id });
+  let shownNet = '';
+
   app.boardListener = (m: ServerMsg) => {
     if ('id' in m && m.id !== id) {
       // a recuperação de uma cópia abre outro quadro: passa a acompanhar o novo
@@ -79,7 +85,7 @@ export function openBoard(app: OfficeApp, boardId: string) {
       case 'board':
         title = m.title;
         els.clear();
-        m.elements.forEach((e) => els.set(e.id, e));
+        m.elements.filter(ok).forEach((e) => els.set(e.id, e));
         copies = m.copies;
         editors = m.editors;
         undo.length = 0;
@@ -88,7 +94,7 @@ export function openBoard(app: OfficeApp, boardId: string) {
         break;
       case 'boardOp':
         m.del?.forEach((d) => els.delete(d));
-        m.put?.forEach((e) => els.set(e.id, e));
+        m.put?.filter(ok).forEach((e) => els.set(e.id, e));
         break;
       case 'boardCursor':
         cursors.set(m.by, { x: m.x, y: m.y, at: Date.now() });
@@ -114,7 +120,10 @@ export function openBoard(app: OfficeApp, boardId: string) {
   const renderTop = () => {
     $('#bdTitle').textContent = title;
     $('#bdPeople').innerHTML = editors.map((e) => `<span class="av" title="${esc(app.name(e))}" style="width:28px;height:28px">${app.shell.avatarImg(e, 28)}</span>`).join('');
-    $('#bdSub').textContent = editors.length > 1 ? `${editors.length} pessoas editando · salvo automaticamente` : 'Salvo automaticamente';
+    // sem conexão, o que se desenha não chega ao servidor: o quadro não finge que salvou
+    shownNet = app.netState;
+    $('#bdSub').textContent = app.netState !== 'online' ? 'Sem conexão: as mudanças não estão sendo salvas' : editors.length > 1 ? `${editors.length} pessoas editando · salvo automaticamente` : 'Salvo automaticamente';
+    $('#bdSub').classList.toggle('warn', app.netState !== 'online');
   };
   const renderTools = () => {
     $('#bdTools').innerHTML = TOOLS.map(([t, ic, label, key]) => `<button class="${tool === t ? 'on' : ''}" data-tool="${t}" title="${label} (${key})">${icon(ic)}</button>`).join('') +
@@ -192,6 +201,7 @@ export function openBoard(app: OfficeApp, boardId: string) {
   const close = () => {
     app.send({ t: 'boardClose', id });
     app.boardListener = null;
+    app.boardReopen = null;
     cancelAnimationFrame(raf);
     removeEventListener('keydown', onKey);
     removeEventListener('keyup', onKeyUp);
@@ -492,6 +502,7 @@ export function openBoard(app: OfficeApp, boardId: string) {
   let raf = 0;
   const paint = () => {
     raf = requestAnimationFrame(paint);
+    if (shownNet !== app.netState) renderTop();
     const now = Date.now();
     const anyCursor = [...cursors.values()].some((c) => now - c.at < 3000);
     if (!dirty && !anyCursor) return;

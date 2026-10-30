@@ -178,7 +178,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 
 /* conversa */
-.conv { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); padding: 10px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 9px; z-index: 6; max-width: calc(100% - 32px); }
+.conv { position: absolute; left: 16px; bottom: 80px; padding: 10px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-line); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 9px; z-index: 6; max-width: calc(100% - 32px); }
 .conv-h { display: flex; align-items: center; gap: 8px; padding: 0 4px; }
 .conv-h .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6); animation: pulse 1.8s infinite; }
 @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); } 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); } }
@@ -254,13 +254,14 @@ body.scene-side .conv-ctl { display: flex; }
 .reactions button:hover { background: var(--chip); transform: scale(1.08); }
 
 /* aviso */
-.stage:has(.drawer:not([hidden])) .toasts { right: 392px; }
-/* com a gaveta aberta, o cartão da conversa e o aviso de conexão também vão para o espaço livre */
-.stage:has(.drawer:not([hidden])) .conv, .stage:has(.drawer:not([hidden])) .conn { left: calc((100% - 376px) / 2); max-width: calc(100% - 408px); }
-/* com conversa aberta, o aviso de conexão desce para não cobrir o cartão */
-.stage:has(.conv:not([hidden])) .conn { top: auto; bottom: 80px; }
-/* e os avisos começam abaixo do cartão, para não cobrir quem está na conversa */
-.stage:has(.conv:not([hidden])) .toasts { top: 180px; }
+/* com a gaveta aberta, os avisos ficam no topo dela, e ela desce na medida deles */
+.stage:has(.drawer:not([hidden])) .toasts { right: 16px; width: 360px; }
+.stage:has(.drawer:not([hidden])) .drawer { top: calc(16px + var(--toasts-h, 0px)); }
+.toasts:not(:empty) { padding-bottom: 8px; }
+/* o cartão da conversa fica no canto de baixo, acima do dock, sem cobrir quem conversa no meio da cena */
+.stage:has(.drawer:not([hidden])) .conv { max-width: calc(100% - 408px); }
+/* com a gaveta aberta, o aviso de conexão vai para o espaço livre */
+.stage:has(.drawer:not([hidden])) .conn { left: calc((100% - 376px) / 2); max-width: calc(100% - 408px); }
 body.scene-side .stage:has(.conv:not([hidden])) .toasts { top: 224px; }
 /* com a gaveta aberta, o dock centraliza no espaço que sobra à esquerda (e a dica sai em telas menores) */
 .stage:has(.drawer:not([hidden])) .dock { left: calc((100% - 376px) / 2); }
@@ -624,6 +625,119 @@ body.scene-side #viewport { left: auto; width: var(--side-w); border-left: 1px s
 body.scene-side .board-modal { inset: 0 var(--side-w) 0 0; border-right: 1px solid var(--line); }
 body.scene-side .present { right: var(--side-w); }
 body.scene-side .map-card, body.scene-side .zoom, body.scene-side .dock, body.scene-side .reactions, body.scene-side .drawer { display: none; }
-body.scene-side .conv { left: auto; right: 12px; transform: none; max-width: calc(var(--side-w) - 24px); }
+body.scene-side .conv { left: auto; right: 12px; top: 16px; bottom: auto; transform: none; max-width: calc(var(--side-w) - 24px); }
 body.scene-side .toasts { right: 12px; width: calc(var(--side-w) - 24px); }
 body.scene-side .conn { left: auto; right: 12px; transform: none; max-width: calc(var(--side-w) - 24px); white-space: normal; border-radius: 14px; }
+
+/* ---------- rodada 9 ---------- */
+/* cartão da conversa: recolher, aviso de microfone, porta da reunião, reservar */
+.conv .iconbtn.sm2 { width: 26px; height: 26px; margin-left: 0 !important; padding: 0 !important; display: grid; place-items: center; }
+.conv-h button + button { margin-left: 0; }
+.conv-h #convLock.on { color: var(--acc); background: var(--acc-soft); }
+.conv.collapsed { flex-direction: row; align-items: center; padding: 6px; gap: 6px; }
+.conv-pill { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 10px; }
+.conv-pill:hover { background: var(--chip); }
+.conv-pill b { font-weight: 600; }
+.conv-pill small { color: var(--mut); }
+.conv-pill .ic { width: 14px; height: 14px; color: var(--mut); transform: rotate(180deg); }
+.conv-pill .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+.conv-pill .pulse.talk { box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 30%, transparent); }
+.pill-ctl { display: flex; gap: 4px; }
+.mic-note { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border-radius: 10px; background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); font-weight: 600; font-size: 12.5px; }
+.mic-note .ic { width: 15px; height: 15px; }
+.mic-note span { flex: 1; }
+.mic-note button { height: 26px; padding: 0 10px; border-radius: 7px; background: var(--red); color: #fff; font-weight: 650; font-size: 12px; }
+.mic-note button.x { width: 26px; padding: 0; display: grid; place-items: center; background: none; color: var(--red); }
+.mic-note button.x .ic { width: 14px; height: 14px; }
+.conv-door { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.conv-door button#doorToggle { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 8px; background: var(--chip); font-size: 12px; font-weight: 600; }
+.conv-door button#doorToggle.shut { color: var(--red); }
+.conv-door button#doorToggle .ic { width: 14px; height: 14px; }
+.conv-door .ask { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 4px 0 4px; border-radius: 8px; background: var(--acc-soft); font-size: 12px; font-weight: 600; }
+.conv-door .ask img { width: 22px; height: 22px; border-radius: 50%; }
+.conv-door .ask button { height: 24px; padding: 0 8px; border-radius: 6px; background: var(--acc); color: var(--acc-ink); font-size: 11.5px; font-weight: 650; }
+.cc.alert { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }
+/* pedido aguardando resposta, no painel da pessoa */
+.drawer .waiting { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px; border-radius: 10px; background: var(--acc-soft); }
+.drawer .waiting .ic { color: var(--acc); }
+.drawer .waiting span { flex: 1; display: flex; flex-direction: column; font-weight: 600; }
+.drawer .waiting small { color: var(--mut); font-weight: 500; }
+.btn.wide.on { background: var(--acc-soft); color: var(--acc); }
+.form-msg { font-size: 12px; font-weight: 550; }
+.form-msg.ok { color: var(--green); }
+.form-msg.err { color: var(--red); }
+.toast .h small.ago { color: var(--mut); font-size: 11.5px; }
+.iconbtn .badge.num { width: auto; height: 16px; min-width: 16px; padding: 0 4px; top: 3px; right: 2px; display: grid; place-items: center; font: 700 10px/1 'Geist', sans-serif; font-style: normal; color: #fff; }
+.pill-btn.quiet { background: transparent; color: var(--mut); border: 1px solid var(--line); }
+.menu .note-row { display: flex; gap: 6px; align-items: center; }
+.menu .note-row input { flex: 1; min-width: 0; }
+.menu .chipbtn.save { flex: none; height: 34px; border-radius: 8px; padding: 0 10px; }
+.bd-title small.warn { color: var(--red); font-weight: 600; }
+/* estado com forma além da cor */
+.tag .dot.sic { width: 13px; height: 13px; display: grid; place-items: center; background: none !important; }
+.tag .dot.sic .ic { width: 13px; height: 13px; stroke-width: 2.3; }
+.tag.compact .dot.sic { width: 10px; height: 10px; }
+.tag.compact .dot.sic .ic { width: 10px; height: 10px; }
+.tag .st.lock { color: var(--acc); }
+.tag .st.ann { color: var(--green); }
+/* rádio compacta quando não há o que ouvir aqui */
+.radio.compact { padding: 8px 10px; gap: 0; }
+.radio.compact .trk, .radio.compact .ctl { display: none; }
+.radio.compact .h small { margin-left: 6px; }
+.radio.compact .h .mini.txt { margin-left: auto; }
+/* faixa do anúncio para a sala */
+.announce-bar { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 11; display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 14px; border-radius: 999px; background: color-mix(in srgb, var(--green) 16%, var(--panel)); border: 1px solid color-mix(in srgb, var(--green) 40%, transparent); box-shadow: var(--shadow); font-weight: 600; white-space: nowrap; }
+.announce-bar .ic { color: var(--green); width: 16px; height: 16px; }
+.announce-bar button { height: 26px; padding: 0 11px; border-radius: 999px; background: var(--green); color: #fff; font-weight: 650; font-size: 12px; }
+.stage:has(.announce-bar:not([hidden])) .conn { top: 60px; }
+/* com o aviso de conexão no alto, os avisos começam abaixo dele */
+.stage:has(.conn:not([hidden])) .toasts { top: 62px; }
+/* rótulos fixos dos pontos do hub */
+.place-tag { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 8px; border-radius: 999px; background: var(--tag); color: var(--tag-text); border: 1px solid var(--tag-line); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.14); font-size: 12px; white-space: nowrap; pointer-events: none; }
+.place-tag .ic { width: 14px; height: 14px; color: var(--acc); }
+.place-tag b { font-weight: 650; }
+.place-tag small { color: var(--mut); }
+.place-tag small:empty { display: none; }
+.place-tag.shut .ic, .place-tag.shut small { color: var(--red); }
+/* guia de primeira entrada */
+.guide { position: fixed; z-index: 70; width: 320px; padding: 14px 16px; border-radius: 14px; background: var(--panel); border: 1px solid var(--acc); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 6px; animation: slideIn 0.25s ease-out; }
+.guide small { color: var(--acc); font-weight: 650; font-size: 11.5px; letter-spacing: 0.04em; }
+.guide b { font-size: 15px; font-weight: 650; }
+.guide p { margin: 0; color: var(--mut); line-height: 1.5; }
+.guide .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+/* dica de teclas: em telas menores, só o essencial numa linha */
+@media (max-width: 1399px) {
+  .hint { display: flex; max-width: none; flex-wrap: nowrap; }
+  .hint .opt { display: none; }
+  /* embaixo o dock e o cartão da conversa ocupam o espaço: a dica sobe para o canto de cima */
+  .map-card { top: 16px; bottom: auto; }
+  .stage:has(.conn:not([hidden])) .map-card, .stage:has(.announce-bar:not([hidden])) .map-card { display: none; }
+}
+/* gaveta aberta em tela média: o dock perde os rótulos para caber no espaço que sobra */
+@media (max-width: 1500px) { .stage:has(.drawer:not([hidden])) .db .lbl { display: none; } }
+/* janela estreita (meia tela): lateral vira um trilho de ícones e o dock sempre fica à vista */
+@media (max-width: 1240px) and (min-width: 901px) {
+  #app { grid-template-columns: 64px minmax(0, 1fr); }
+  .brand { min-width: 0; }
+  .side .search { margin: 12px 10px 4px; padding: 0; justify-content: center; }
+  .side .search input, .side .search kbd { display: none; }
+  .side .sec, .side .sub-sec, .side .people-empty { display: none; }
+  .side .spaces { padding: 8px 8px 0; }
+  .space-row { justify-content: center; padding: 0; position: relative; }
+  .space-row b, .space-row small, .space-row small.locked { display: none; }
+  .space-row:has(small.locked)::after { content: ''; position: absolute; top: 5px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--red); border: 2px solid var(--panel); }
+  .people { padding: 8px 8px; border-top: 1px solid var(--line); margin-top: 8px; }
+  .prow { justify-content: center; padding: 0; }
+  .prow .who, .prow .weak, .prow .hand { display: none; }
+  .prow .live { position: absolute; margin: 18px 0 0 22px; }
+  .prow { position: relative; }
+  .radio { margin: 8px; padding: 8px; }
+  .radio .h b, .radio .h small, .radio .h .mini, .radio .trk, .radio .ctl { display: none !important; }
+  .radio .h { justify-content: center; }
+  .db .lbl { display: none; }
+  .db { padding: 0 10px; }
+  .stage:has(.drawer:not([hidden])) .dock { left: 50%; z-index: 10; }
+  .stage:has(.drawer:not([hidden])) .drawer { bottom: 84px; }
+  .stage:has(.drawer:not([hidden])) .map-card { display: none; }
+  .stage:has(.drawer:not([hidden])) .conn { left: 16px; transform: none; max-width: calc(100% - 408px); white-space: normal; border-radius: 14px; }
+}

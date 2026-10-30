@@ -1,8 +1,9 @@
 import type { WebSocket } from 'ws';
 import { AREAS, DESKS, ENTRY, GUEST_ENTRY, HUB, PROX, REUNIAO, SALA, areaAt, inside } from '../../shared/layout';
 import { sanitizeLook } from '../../shared/look';
-import type { BoardElement, ClientMsg, Conv, FocusBlock, FocusSession, GameState, Presence, PublicUser, RadioItem, RadioState, ServerMsg, Status } from '../../shared/protocol';
-import { boards, guests, invites, notes, settings, users } from './db';
+import type { Announce, BoardElement, ClientMsg, Conv, FocusBlock, FocusSession, GameState, Presence, PublicUser, RadioItem, RadioState, ServerMsg, Status } from '../../shared/protocol';
+import { boards, guests, invites, notes, sessions, settings, users } from './db';
+import { closeRoom, joinToken, kick, mediaRoom } from './livekit';
 import { publicGuest, publicUser, randomId, type Who } from './auth';
 import { config } from './config';
 
@@ -26,6 +27,24 @@ const DROP_GRACE_MS = 25_000;
 const WALKING_MS = 400;
 /** Jogador da vez que fica esse tempo sem jogar perde o lugar na mesa. */
 const GAME_IDLE_MS = 120_000;
+/** Pedido para falar ou batida na porta sem resposta expira depois disso. */
+const REQUEST_MS = 120_000;
+/** Duração máxima de um anúncio para a sala. */
+const ANNOUNCE_MS = 60_000;
+/** Erros do player do YouTube que não passam tentando de novo (vídeo inexistente ou sem incorporação). */
+const RADIO_FATAL = [2, 100, 101, 150];
+const BOARD_KINDS = ['stroke', 'sticky', 'text', 'rect', 'ellipse', 'arrow'];
+const num = (n: unknown) => n === undefined || (typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 1e5);
+/** Elemento de quadro bem formado: um valor inválido inutilizaria o quadro para todos. */
+export function validElement(e: BoardElement) {
+  return !!e && typeof e.id === 'string' && e.id.length <= 40 && BOARD_KINDS.includes(e.kind) &&
+    finite(e.x, -1e5, 1e5) && finite(e.y, -1e5, 1e5) && num(e.w) && num(e.h) && num(e.size) && num(e.z) &&
+    typeof e.color === 'string' && e.color.length <= 32 &&
+    (e.points === undefined || (Array.isArray(e.points) && e.points.length <= 4000 && e.points.every((v) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 1e5))) &&
+    (e.text === undefined || typeof e.text === 'string');
+}
+/** Fim do dia de hoje, no relógio do servidor. */
+const endOfDay = () => { const d = new Date(); d.setHours(23, 59, 59, 0); return d.getTime(); };
 const WALL_BOARDS = ['sala', 'reuniao'];
 const send = (ws: WebSocket | null, m: ServerMsg) => {
   if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(m));
@@ -65,6 +84,17 @@ export class Office {
   private game: GameState = emptyGame();
   /** Última jogada (ou entrada) de cada jogador da mesa. */
   private gameActive = new Map<string, number>();
+  /** Pedidos "Posso falar?" ainda sem resposta: `de>para` → quando. */
+  private knocks = new Map<string, number>();
+  /** Batidas na porta da reunião sem resposta: quem bateu → quando. */
+  private doorKnocks = new Map<string, number>();
+  /** Avisos pedidos: quem quer saber → (de quem → tipo, validade, e se é um "te chamo quando terminar"). */
+  private watches = new Map<string, Map<string, { kind: 'free' | 'arrive'; until: number; remind?: boolean }>>();
+  /** Quem estava em cada sala de mídia, para tirar da sala quem saiu da conversa. */
+  private mediaMembers = new Map<string, Set<string>>();
+  private announce: (Announce & { timer: NodeJS.Timeout }) | null = null;
+  /** Avisos de erro de cada música da rádio (um erro de uma pessoa só não apaga para todos). */
+  private radioErrors = new Map<number, Set<string>>();
   private editors = new Map<string, Set<string>>();
   private docs = new Map<string, { elements: Map<string, BoardElement>; timer?: NodeJS.Timeout; by: string }>();
 
@@ -78,6 +108,7 @@ export class Office {
     setInterval(() => this.flushMoves(), 100);
     setInterval(() => this.proximity(0.2), 200);
     setInterval(() => this.focusTick(), 1000);
+    setInterval(() => this.requestsTick(), 1000);
   }
 
   // ---------- conexão ----------
@@ -93,6 +124,8 @@ export class Office {
       clearTimeout(p.dropTimer);
       p.ws = ws;
       p.presence.unstable = false;
+      // a conversa atual vai de novo: o aviso de saída pode ter ido para a conexão que caiu
+      this.lastSentConv.delete(who.id);
       this.broadcast({ t: 'presence', presence: p.presence });
     } else {
       const user = this.userFor(who);
@@ -113,6 +146,9 @@ export class Office {
       if (who.guest) this.announceGuest(p);
     }
     send(ws, this.initFor(p));
+    // as conversas em andamento vão junto (a lista só é transmitida quando muda)
+    if (!p.presence.waiting) send(ws, { t: 'convs', convs: this.convList() });
+    if (!existing) this.arrived(who.id);
     ws.on('message', (raw) => {
       try { this.handle(p!, JSON.parse(String(raw)) as ClientMsg); } catch (e) { console.warn('mensagem inválida', e); }
     });
@@ -130,6 +166,8 @@ export class Office {
 
   private disconnected(p: Person, ws: WebSocket, code: number) {
     if (p.ws !== ws) return; // já substituída por outra aba
+    // já removida (acesso retirado, visitante recusado): não volta como "instável"
+    if (this.people.get(p.presence.id) !== p) return;
     p.ws = null;
     if (code === 4000) return this.remove(p.presence.id); // saiu pelo botão
     // queda de conexão: mantém o avatar marcado como instável por um tempo
@@ -146,7 +184,9 @@ export class Office {
     this.leaveConv(id);
     this.doorAllowed.delete(id);
     this.radioDrop(id);
-    if (this.focus) this.focus.participants = this.focus.participants.filter((x) => x !== id);
+    this.focusDrop(id);
+    this.dropRequests(id);
+    if (this.announce?.by === id) this.endAnnounce();
     for (const [bid, set] of this.editors) if (set.delete(id)) this.broadcastEditors(bid);
     if (this.game.players.includes(id)) this.gameLeave(id);
     this.broadcast({ t: 'leave', id });
@@ -169,6 +209,14 @@ export class Office {
 
   private initFor(p: Person): ServerMsg {
     const member = p.user.role !== 'guest';
+    // visitante esperando a admissão não vê nada de quem está dentro
+    if (p.presence.waiting) {
+      return {
+        t: 'init', you: p.presence.id, users: [p.user], presence: [p.presence], doorOpen: true,
+        radio: { queue: [], current: null, startedAt: 0, listeners: [] }, focus: null, notes: [], noteCounts: {},
+        game: emptyGame(), settings: { officeName: settings.get('officeName') ?? config.officeName }, walls: {}, serverTime: Date.now(),
+      };
+    }
     const list = [...this.people.values()];
     return {
       t: 'init',
@@ -194,7 +242,7 @@ export class Office {
   broadcast(m: ServerMsg, except?: string, filter?: (p: Person) => boolean) {
     const s = JSON.stringify(m);
     for (const p of this.people.values()) {
-      if (p.presence.id === except || !p.ws || p.ws.readyState !== p.ws.OPEN) continue;
+      if (p.presence.id === except || !p.ws || p.ws.readyState !== p.ws.OPEN || p.presence.waiting) continue;
       if (filter && !filter(p)) continue;
       p.ws.send(s);
     }
@@ -222,6 +270,10 @@ export class Office {
         this.dirty.add(id);
         // quem sai do hub deixa a mesa de jogo para outra pessoa
         if (this.game.players.includes(id) && !inside(HUB, m.x, m.z)) this.gameLeave(id);
+        // quem sai do ambiente do anúncio deixa de ouvi-lo (ou, se era quem falava, ele acaba)
+        if (this.announce && acoustic(p.presence) !== this.announce.space) {
+          if (this.announce.by === id) this.endAnnounce(); else kick(mediaRoom(`anuncio-${this.announce.space}`), id);
+        }
         // a rádio só toca dentro da sala da equipe
         if (this.radio.listeners.includes(id) && !inside(SALA, m.x, m.z)) {
           this.radioDrop(id);
@@ -252,12 +304,59 @@ export class Office {
       case 'leaveConv': return this.leaveConv(id, true);
       case 'knock': {
         const target = this.people.get(m.to);
-        if (!target || target === p) return;
+        if (!target || target === p || target.presence.waiting) return;
+        this.knocks.set(`${id}>${m.to}`, Date.now());
         return this.to(m.to, { t: 'knock', from: id, text: clean(m.text, 120) });
       }
+      case 'knockCancel': {
+        if (this.knocks.delete(`${id}>${m.to}`)) this.to(m.to, { t: 'knockGone', from: id, reason: 'cancel' });
+        return;
+      }
       case 'knockReply': {
-        this.to(m.to, { t: 'knockReply', from: id, accept: !!m.accept });
+        // só vale a resposta a um pedido que existiu (e foi feito a quem responde)
+        if (!this.knocks.delete(`${m.to}>${id}`)) return;
+        const later = !m.accept && !!m.later;
+        this.to(m.to, { t: 'knockReply', from: id, accept: !!m.accept, later });
         if (m.accept && this.people.has(m.to)) this.directConv(id, m.to);
+        // "te chamo quando terminar": quem pediu é avisado quando quem recusou ficar livre
+        if (later) this.addWatch(m.to, id, 'free', true);
+        return;
+      }
+      case 'watch': {
+        if (!member || m.target === id || !users.get(m.target)) return;
+        if (m.kind !== 'free' && m.kind !== 'arrive') return;
+        if (m.on) this.addWatch(id, m.target, m.kind);
+        else if (this.watches.get(id)?.delete(m.target)) this.to(m.target, { t: 'watched', by: id, kind: m.kind, on: false });
+        return;
+      }
+      case 'convLock': {
+        const c = this.convs.get(this.convOf.get(id) ?? '');
+        if (!c || c.kind === 'room') return;
+        c.locked = !!m.locked;
+        this.lastConvsKey = '';
+        for (const x of c.members) this.lastSentConv.delete(x);
+        return;
+      }
+      case 'convAsk': {
+        const c = this.convs.get(this.convOf.get(m.to) ?? '');
+        if (!c?.locked || this.convOf.has(id) && this.convOf.get(id) === c.id) return;
+        for (const x of c.members) this.to(x, { t: 'convAsk', who: id });
+        return;
+      }
+      case 'convAdmit': {
+        const c = this.convs.get(this.convOf.get(id) ?? '');
+        const who = this.people.get(m.who);
+        if (!c?.locked || !who) return;
+        for (const x of c.members) this.to(x, { t: 'convAskResolved', who: m.who, accept: !!m.accept, by: id });
+        if (!m.accept) return this.to(m.who, { t: 'toast', text: `${p.user.name.split(' ')[0]} pediu para deixar a conversa para depois.` });
+        this.leaveConv(m.who);
+        c.members.push(m.who);
+        this.setConv(m.who, c.id);
+        return;
+      }
+      case 'announceStart': return this.startAnnounce(p);
+      case 'announceStop': {
+        if (this.announce?.by === id) this.endAnnounce();
         return;
       }
       case 'door': {
@@ -267,12 +366,14 @@ export class Office {
         return this.broadcast({ t: 'door', open: this.doorOpen, by: id });
       }
       case 'doorKnock': {
+        this.doorKnocks.set(id, Date.now());
         for (const x of this.people.values()) if (this.inRoom(x)) send(x.ws, { t: 'doorKnock', who: id });
         return;
       }
       case 'doorReply': {
         if (!this.inRoom(p)) return;
         if (!this.people.has(m.who)) return;
+        this.doorKnocks.delete(m.who);
         if (m.accept) this.doorAllowed.add(m.who);
         this.to(m.who, { t: 'doorReply', accept: !!m.accept });
         // o pedido some da tela de todos que estão dentro, não só de quem respondeu
@@ -343,7 +444,7 @@ export class Office {
         this.radioDrop(id);
         return this.broadcastRadio();
       }
-      case 'radioAdd': return void this.radioAdd(p, m.url);
+      case 'radioAdd': return member ? void this.radioAdd(p, m.url) : undefined;
       case 'radioSkip': {
         const cur = this.radio.current;
         if (!member || cur?.id !== m.itemId) return;
@@ -357,16 +458,28 @@ export class Office {
       case 'radioEnded':
         if (this.radio.current?.id === m.itemId && Date.now() - this.radio.startedAt > 5000) this.radioAdvance();
         return;
-      case 'radioError':
-        // cada ouvinte avisa do mesmo erro: só o primeiro conta, porque o item já saiu da programação
-        if (this.radio.current?.id === m.itemId) {
-          const title = this.radio.current.title;
-          this.radio.current = null;
+      case 'radioError': {
+        // só conta quem está ouvindo. Erro passageiro: segue para a próxima e a música continua na fila.
+        // Erro definitivo (vídeo inexistente ou sem incorporação), confirmado por até dois ouvintes:
+        // a música sai da programação.
+        const cur = this.radio.current;
+        if (!cur || cur.id !== m.itemId || !this.radio.listeners.includes(id)) return;
+        if (!RADIO_FATAL.includes(Number(m.code))) {
           this.radioAdvance();
-          const next = this.radio.current ? 'A rádio seguiu para a próxima.' : 'A programação ficou vazia.';
-          for (const l of this.radio.listeners) this.to(l, { t: 'toast', text: `“${title}” está indisponível e saiu da programação. ${next}` });
+          for (const l of this.radio.listeners) this.to(l, { t: 'toast', text: `“${cur.title}” não carregou agora. A rádio seguiu para a próxima.` });
+          return;
         }
+        const who = this.radioErrors.get(cur.id) ?? new Set<string>();
+        who.add(id);
+        this.radioErrors.set(cur.id, who);
+        if (who.size < Math.min(2, this.radio.listeners.length)) return;
+        this.radioErrors.delete(cur.id);
+        this.radio.current = null;
+        this.radioAdvance();
+        const next = this.radio.current ? 'A rádio seguiu para a próxima.' : 'A programação ficou vazia.';
+        for (const l of this.radio.listeners) this.to(l, { t: 'toast', text: `“${cur.title}” está indisponível e saiu da programação. ${next}` });
         return;
+      }
       case 'focusStart': return this.focusStart(p, m.blocks);
       case 'focusJoin': {
         if (!this.focus || !member || this.focus.participants.includes(id)) return;
@@ -376,9 +489,7 @@ export class Office {
       }
       case 'focusLeave': {
         if (!this.focus) return;
-        this.focus.participants = this.focus.participants.filter((x) => x !== id);
-        if (!this.focus.participants.length) this.focus = null;
-        return this.broadcastFocus();
+        return this.focusDrop(id);
       }
       case 'focusEnd': {
         // só quem começou a sessão encerra para todos
@@ -394,7 +505,8 @@ export class Office {
         if (slot < 0) return;
         if (!inside(HUB, p.presence.x, p.presence.z)) return;
         this.game.players[slot] = id;
-        this.gameActive.set(id, Date.now());
+        // a partida começa agora para os dois: quem esperava sozinho não conta como parado
+        for (const x of this.game.players) if (x) this.gameActive.set(x, Date.now());
         return this.broadcast({ t: 'game', game: this.game });
       }
       case 'gameMove': return this.gameMove(id, m.cell);
@@ -413,13 +525,20 @@ export class Office {
       case 'admit': {
         const g = this.people.get(m.guest);
         if (!member || !g?.presence.waiting) return;
+        // o aviso "chegou e pediu para entrar" some da tela de todos
+        this.broadcast({ t: 'guestResolved', guest: m.guest, accept: !!m.accept, by: id }, undefined, this.members);
         if (m.accept) {
           g.presence.waiting = false;
           g.presence.status = 'disp';
+          // só agora o visitante recebe o estado do escritório
+          send(g.ws, this.initFor(g));
+          send(g.ws, { t: 'convs', convs: this.convList() });
           send(g.ws, { t: 'admitted' });
-          this.broadcast({ t: 'presence', presence: g.presence });
+          this.broadcast({ t: 'user', user: g.user }, m.guest);
+          this.broadcast({ t: 'join', presence: g.presence }, m.guest);
           this.broadcast({ t: 'toast', text: `${g.user.name} entrou como visitante.` }, undefined, this.members);
         } else {
+          sessions.deleteForUser(m.guest);
           send(g.ws, { t: 'refused' });
           g.ws?.close(4003, 'refused');
           this.remove(m.guest);
@@ -535,7 +654,7 @@ export class Office {
         if (v === u || cool?.has(v.presence.id) || this.cooldown.get(v.presence.id)?.has(uid)) continue;
         if (acoustic(v.presence) !== acoustic(u.presence)) continue;
         const vc = this.convOf.get(v.presence.id);
-        if (vc && this.convs.get(vc)?.kind !== 'prox') continue;
+        if (vc && (this.convs.get(vc)?.kind !== 'prox' || this.convs.get(vc)?.locked)) continue;
         const d = dist(u.presence, v.presence);
         if (d < bd) { bd = d; best = v; }
       }
@@ -563,22 +682,162 @@ export class Office {
     }
     for (const k of this.dwell.keys()) if (!seen.has(k)) this.dwell.delete(k);
 
+    this.syncMediaRooms();
+
     // avisa cada pessoa da sua conversa, e todos das conversas visíveis no mapa
     for (const p of this.people.values()) {
       const cid = this.convOf.get(p.presence.id) ?? '';
       const c = cid ? this.convs.get(cid) : undefined;
-      const key = c ? `${c.id}:${[...c.members].sort().join(',')}` : '';
+      const key = c ? `${c.id}:${[...c.members].sort().join(',')}:${!!c.locked}` : '';
       if (this.lastSentConv.get(p.presence.id) !== key) {
         this.lastSentConv.set(p.presence.id, key);
-        send(p.ws, { t: 'conv', conv: c ? { id: c.id, kind: c.kind, members: c.members } : null });
+        send(p.ws, { t: 'conv', conv: c ? { id: c.id, kind: c.kind, members: c.members, locked: !!c.locked } : null });
       }
     }
-    const all = [...this.convs.values()].map((c) => ({ id: c.id, kind: c.kind, members: [...c.members].sort() }));
+    const all = this.convList();
     const allKey = JSON.stringify(all);
     if (allKey !== this.lastConvsKey) {
       this.lastConvsKey = allKey;
       this.broadcast({ t: 'convs', convs: all });
     }
+  }
+
+  private convList(): Conv[] {
+    return [...this.convs.values()].map((c) => ({ id: c.id, kind: c.kind, members: [...c.members].sort(), locked: !!c.locked }));
+  }
+
+  /** Quem saiu de uma conversa é tirado da sala de mídia dela; conversa que acabou tem a sala fechada. */
+  private syncMediaRooms() {
+    const now = new Map([...this.convs.values()].map((c) => [c.id, new Set(c.members)]));
+    for (const [cid, before] of this.mediaMembers) {
+      const cur = now.get(cid);
+      if (!cur) { closeRoom(mediaRoom(cid)); continue; }
+      for (const id of before) if (!cur.has(id)) kick(mediaRoom(cid), id);
+    }
+    this.mediaMembers = now;
+  }
+
+  /** Sala de mídia que a pessoa pode abrir agora: a da conversa dela, ou a do anúncio que pode ouvir. */
+  mediaGrant(id: string, kind: 'conv' | 'announce') {
+    const p = this.people.get(id);
+    if (!p || p.presence.waiting) return null;
+    if (kind === 'announce') {
+      const a = this.announce;
+      if (!a || acoustic(p.presence) !== a.space) return null;
+      const speaker = a.by === id;
+      if (!speaker && !this.hearsAnnounce(p)) return null;
+      const room = mediaRoom(`anuncio-${a.space}`);
+      return { room, token: joinToken(id, p.user.name, room, speaker) };
+    }
+    const cid = this.convOf.get(id);
+    if (!cid) return null;
+    const room = mediaRoom(cid);
+    return { room, token: joinToken(id, p.user.name, room) };
+  }
+
+  // ---------- anúncio para a sala ----------
+  /** Ouve o anúncio quem está no ambiente, disponível ou em conversa por proximidade; foco, ausência e reunião ficam de fora. */
+  private hearsAnnounce(p: Person) {
+    const st = this.effectiveStatus(p);
+    const c = this.convs.get(this.convOf.get(p.presence.id) ?? '');
+    return !!p.ws && st !== 'foco' && st !== 'afk' && (!c || c.kind === 'prox');
+  }
+
+  private startAnnounce(p: Person) {
+    const space = acoustic(p.presence);
+    if (p.user.role === 'guest' || this.announce || (space !== 'sala' && space !== 'hub')) return;
+    const until = Date.now() + ANNOUNCE_MS;
+    this.announce = { by: p.presence.id, space, until, timer: setTimeout(() => this.endAnnounce(), ANNOUNCE_MS) };
+    this.broadcast({ t: 'announce', announce: { by: p.presence.id, space, until } });
+    // quem não vai ouvir (em foco ou ausente, no mesmo ambiente) fica sabendo por texto
+    const first = p.user.name.split(' ')[0];
+    for (const x of this.people.values()) {
+      if (x === p || acoustic(x.presence) !== space || this.hearsAnnounce(x)) continue;
+      send(x.ws, { t: 'toast', text: `${first} fez um anúncio para ${space === 'sala' ? 'a sala da equipe' : 'o hub'}.` });
+    }
+  }
+
+  private endAnnounce() {
+    const a = this.announce;
+    if (!a) return;
+    clearTimeout(a.timer);
+    this.announce = null;
+    closeRoom(mediaRoom(`anuncio-${a.space}`));
+    this.broadcast({ t: 'announce', announce: null });
+  }
+
+  // ---------- pedidos, prazos e avisos de disponibilidade ----------
+  private addWatch(watcher: string, target: string, kind: 'free' | 'arrive', remind = false) {
+    const list = this.watches.get(watcher) ?? new Map();
+    list.set(target, { kind, until: endOfDay(), remind });
+    this.watches.set(watcher, list);
+    if (!remind) this.to(target, { t: 'watched', by: watcher, kind, on: true });
+  }
+
+  /** Livre para conversar: online, disponível, fora da reunião e sem conversa. */
+  private free(p: Person) {
+    return !!p.ws && !p.presence.waiting && !p.presence.unstable && this.effectiveStatus(p) === 'disp' && !this.inRoom(p) && !this.convOf.has(p.presence.id);
+  }
+
+  /** Alguém entrou: avisa quem pediu "avisar quando chegar". */
+  private arrived(id: string) {
+    for (const [watcher, list] of this.watches) {
+      const w = list.get(id);
+      if (w?.kind !== 'arrive') continue;
+      list.delete(id);
+      this.to(watcher, { t: 'watchHit', target: id, kind: 'arrive' });
+    }
+  }
+
+  private requestsTick() {
+    const now = Date.now();
+    // pedidos para falar e batidas na porta sem resposta vencem
+    for (const [key, at] of this.knocks) {
+      if (now - at < REQUEST_MS) continue;
+      this.knocks.delete(key);
+      const [from, to] = key.split('>');
+      this.to(to, { t: 'knockGone', from, reason: 'expire' });
+      this.to(from, { t: 'knockExpired', to });
+    }
+    for (const [who, at] of this.doorKnocks) {
+      if (now - at < REQUEST_MS) continue;
+      this.doorKnocks.delete(who);
+      this.to(who, { t: 'doorReply', accept: false, expired: true });
+      for (const x of this.people.values()) if (this.inRoom(x)) send(x.ws, { t: 'doorResolved', who, accept: false, by: '' });
+    }
+    // avisos de "ficou livre"
+    for (const [watcher, list] of this.watches) {
+      for (const [target, w] of list) {
+        if (now > w.until) { list.delete(target); continue; }
+        const tp = this.people.get(target);
+        if (w.kind !== 'free' || !tp || !this.free(tp)) continue;
+        list.delete(target);
+        this.to(watcher, { t: 'watchHit', target, kind: 'free' });
+        if (w.remind) this.to(target, { t: 'remind', who: watcher });
+        else this.to(target, { t: 'watched', by: watcher, kind: 'free', on: false });
+      }
+      if (!list.size) this.watches.delete(watcher);
+    }
+  }
+
+  /** Pedidos pendentes de quem saiu deixam de existir para os dois lados. */
+  private dropRequests(id: string) {
+    for (const key of [...this.knocks.keys()]) {
+      const [from, to] = key.split('>');
+      if (from === id) { this.knocks.delete(key); this.to(to, { t: 'knockGone', from, reason: 'cancel' }); }
+      else if (to === id) this.knocks.delete(key);
+    }
+    if (this.doorKnocks.delete(id)) for (const x of this.people.values()) if (this.inRoom(x)) send(x.ws, { t: 'doorResolved', who: id, accept: false, by: '' });
+    this.watches.delete(id);
+  }
+
+  /** Visitante cujo convite foi revogado: sai na hora. */
+  dropGuest(id: string) {
+    const p = this.people.get(id);
+    if (!p) return;
+    send(p.ws, { t: 'toast', text: 'Seu convite foi encerrado.' });
+    p.ws?.close(4003, 'forbidden');
+    this.remove(id);
   }
 
   // ---------- quadros ----------
@@ -590,11 +849,7 @@ export class Office {
   private boardOpen(p: Person, id: string) {
     const b = boards.get(id);
     if (!b || !this.canBoard(p, id)) return;
-    let doc = this.docs.get(id);
-    if (!doc) {
-      doc = { elements: new Map(b.elements.map((e) => [e.id, e])), by: '' };
-      this.docs.set(id, doc);
-    }
+    const doc = this.doc(id)!;
     const set = this.editors.get(id) ?? new Set();
     set.add(p.presence.id);
     this.editors.set(id, set);
@@ -603,14 +858,28 @@ export class Office {
     this.broadcastEditors(id);
   }
 
+  /** Documento vivo de um quadro, carregado do banco na primeira vez (sem elementos malformados). */
+  private doc(id: string) {
+    let doc = this.docs.get(id);
+    const b = doc ? null : boards.get(id);
+    if (!doc && b) {
+      doc = { elements: new Map(b.elements.filter(validElement).map((e) => [e.id, e])), by: '' };
+      this.docs.set(id, doc);
+    }
+    return doc;
+  }
+
   private boardOp(p: Person, id: string, put?: BoardElement[], del?: string[]) {
-    const doc = this.docs.get(id);
-    if (!doc || !this.editors.get(id)?.has(p.presence.id)) return;
+    if (!this.canBoard(p, id)) return;
+    const doc = this.doc(id);
+    if (!doc) return;
+    // quem edita sem estar na lista (reconectou depois de um reinício) passa a constar, em vez de perder o traço
+    const eds = this.editors.get(id) ?? new Set();
+    if (!eds.has(p.presence.id)) { eds.add(p.presence.id); this.editors.set(id, eds); this.broadcastEditors(id); }
     const ok: BoardElement[] = [];
     for (const e of (put ?? []).slice(0, 200)) {
-      if (!e || typeof e.id !== 'string' || !finite(e.x, -1e5, 1e5) || !finite(e.y, -1e5, 1e5)) continue;
-      if (e.points && (!Array.isArray(e.points) || e.points.length > 4000)) continue;
-      const el: BoardElement = { ...e, text: e.text ? String(e.text).slice(0, 2000) : e.text, by: p.user.name };
+      if (!validElement(e)) continue;
+      const el: BoardElement = { ...e, text: e.text ? e.text.slice(0, 2000) : e.text, by: p.user.name };
       doc.elements.set(el.id, el);
       ok.push(el);
     }
@@ -628,11 +897,11 @@ export class Office {
 
   /** Volta uma cópia para o próprio quadro; o que estava nele vira uma cópia, para não se perder. */
   private boardBringBack(p: Person, id: string, c: { name: string; elements: string }) {
-    const doc = this.docs.get(id) ?? { elements: new Map((boards.get(id)?.elements ?? []).map((e) => [e.id, e])), by: '' };
-    this.docs.set(id, doc);
+    const doc = this.doc(id);
+    if (!doc) return;
     const before = [...doc.elements.values()];
     if (before.length) boards.copy(id, `Antes de recuperar “${c.name}”`, before, p.user.name);
-    const els = JSON.parse(c.elements) as BoardElement[];
+    const els = (JSON.parse(c.elements) as BoardElement[]).filter(validElement);
     doc.elements = new Map(els.map((e) => [e.id, e]));
     doc.by = p.user.name;
     clearTimeout(doc.timer);
@@ -647,7 +916,7 @@ export class Office {
 
   private boardElements(id: string) {
     const doc = this.docs.get(id);
-    return doc ? [...doc.elements.values()] : boards.get(id)?.elements ?? [];
+    return doc ? [...doc.elements.values()] : (boards.get(id)?.elements ?? []).filter(validElement);
   }
 
   private broadcastEditors(id: string) {
@@ -665,11 +934,11 @@ export class Office {
   // ---------- rádio ----------
   private async radioAdd(p: Person, url: string) {
     const videoId = youtubeId(String(url ?? ''));
-    if (!videoId) return send(p.ws, { t: 'toast', text: 'Não reconheci esse link do YouTube.' });
+    if (!videoId) return send(p.ws, { t: 'radioAddResult', ok: false, text: 'Não reconheci esse link do YouTube.' });
     let title = 'Vídeo do YouTube';
     try {
       const r = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}`);
-      if (!r.ok) return send(p.ws, { t: 'toast', text: 'Esse vídeo não pode ser tocado fora do YouTube ou está indisponível.' });
+      if (!r.ok) return send(p.ws, { t: 'radioAddResult', ok: false, text: 'Esse vídeo não pode ser tocado fora do YouTube ou está indisponível.' });
       // transmissões ao vivo às vezes vêm sem título: usa o canal como nome
       const j = (await r.json()) as { title?: string; author_name?: string };
       title = j.title || (j.author_name ? `Ao vivo · ${j.author_name}` : title);
@@ -677,6 +946,7 @@ export class Office {
       // sem acesso ao YouTube pelo servidor: aceita e deixa o player avisar se falhar
     }
     this.radio.queue.push({ id: this.radioSeq++, videoId, title, addedBy: p.user.name, addedById: p.presence.id });
+    send(p.ws, { t: 'radioAddResult', ok: true, text: `“${title}” entrou na programação.` });
     if (!this.radio.current && this.radio.listeners.length) this.radioAdvance();
     else { this.saveRadio(); this.broadcastRadio(); }
   }
@@ -753,6 +1023,16 @@ export class Office {
   }
 
   private broadcastFocus() { this.broadcast({ t: 'focus', focus: this.focus, serverTime: Date.now() }); }
+
+  /** Quem sai do escritório sai da sessão; sessão vazia acaba, e o dono passa para quem ficou. */
+  private focusDrop(id: string) {
+    const f = this.focus;
+    if (!f || !f.participants.includes(id)) return;
+    f.participants = f.participants.filter((x) => x !== id);
+    if (!f.participants.length) this.focus = null;
+    else if (f.owner === id) f.owner = f.participants[0];
+    this.broadcastFocus();
+  }
 
   // ---------- jogo da velha (lazer) ----------
   /** Partida parada: quem está na vez e não joga há muito tempo libera a mesa. */

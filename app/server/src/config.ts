@@ -35,6 +35,8 @@ export const config = {
     url: env.LIVEKIT_URL ?? 'ws://localhost:7880',
     apiKey: env.LIVEKIT_API_KEY ?? 'devkey',
     apiSecret: env.LIVEKIT_API_SECRET ?? 'secret',
+    /** Onde o servidor fala com a API do LiveKit (tirar alguém de uma sala); por padrão, o mesmo endereço em http(s). */
+    apiUrl: (env.LIVEKIT_API_URL ?? (env.LIVEKIT_URL ?? 'ws://localhost:7880').replace(/^ws/, 'http')).replace(/\/$/, ''),
   },
   officeName: env.OFFICE_NAME ?? 'Virtuta',
 };

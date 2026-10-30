@@ -30,7 +30,7 @@ export const api = {
   },
   devLogin: (name: string, email?: string) => call<{ ok: boolean }>('POST', '/api/auth/dev', { name, email }),
   logout: () => call('POST', '/api/auth/logout'),
-  mediaToken: () => call<{ url: string; token: string }>('GET', '/api/media-token'),
+  mediaToken: (kind: 'conv' | 'announce' = 'conv') => call<{ url: string; token: string; room: string }>('GET', `/api/media-token?for=${kind}`),
   invite: (name: string, hours: number) => call<{ url: string; expiresAt: number }>('POST', '/api/invites', { name, hours }),
   inviteInfo: (token: string) => call<{ name: string; host: string; expiresAt: number; officeName: string; error?: string }>('GET', `/api/invite?token=${encodeURIComponent(token)}`),
   joinInvite: (token: string, name: string) => call<{ ok: boolean }>('POST', '/api/invite/join', { token, name }),

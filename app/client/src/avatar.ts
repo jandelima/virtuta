@@ -3,7 +3,7 @@ import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { buildCharacter, disposeCharacter, resolveLook } from './look';
 import type { NavGrid } from './world/nav';
 import type { Seat } from './world/space';
-import { STATUS_COLOR, type Person } from './people';
+import { STATUS_COLOR, STATUS_ICON, type Person } from './people';
 import { icon } from './ui/icons';
 import { esc } from './ui/dom';
 
@@ -65,6 +65,10 @@ export class Avatar {
   private emoteTimer = 0;
   seat?: Seat;
   speaking = false;
+  /** Em conversa reservada (cadeado sobre o grupo). */
+  locked = false;
+  /** Falando para a sala. */
+  announcing = false;
   inCall = false;
   micOn = false;
 
@@ -118,15 +122,16 @@ export class Avatar {
 
   refreshLabel() {
     const p = this.person;
-    const extra =
-      p.status === 'foco' ? icon('focus', 'st foco') :
-      p.status === 'afk' ? icon('coffee', 'st afk') :
-      p.status === 'visita' ? icon('door', 'st visita') : '';
+    // disponível é um ponto; os outros estados têm ícone próprio (também no rótulo compacto)
+    const si = STATUS_ICON[p.status];
+    const dot = si ? `<i class="dot sic" style="color:${STATUS_COLOR[p.status]}">${icon(si)}</i>` : `<i class="dot" style="background:${STATUS_COLOR[p.status]}"></i>`;
+    const lock = this.locked ? icon('lock', 'st lock') : '';
     const mic = this.inCall ? icon(this.micOn ? 'mic' : 'micOff', this.micOn ? 'mic on' : 'mic') : '';
     const weak = p.unstable ? icon('wifiOff', 'st weak') : '';
     this.labelEl.className = `tag${p.me ? ' me' : ''}${this.speaking ? ' speaking' : ''}${p.guest ? ' guest' : ''}${p.unstable ? ' unstable' : ''}`;
     const hand = p.hand ? '<span class="hand" title="Mão levantada">✋</span>' : '';
-    this.labelEl.innerHTML = `<i class="dot" style="background:${STATUS_COLOR[p.status]}"></i><b>${esc(p.short)}${p.me ? ' (você)' : ''}</b>${hand}${extra}${weak}${mic}`;
+    const ann = this.announcing ? icon('volume', 'st ann') : '';
+    this.labelEl.innerHTML = `${dot}<b>${esc(p.short)}${p.me ? ' (você)' : ''}</b>${hand}${ann}${lock}${weak}${mic}`;
   }
 
   /** Rótulo compacto: só a bolinha de status, sem o nome. */

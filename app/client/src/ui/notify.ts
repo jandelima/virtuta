@@ -20,6 +20,8 @@ export class Notifier {
   sound = true;
 
   constructor(private app: OfficeApp) {
+    // com a gaveta aberta, os avisos ficam no topo dela e a gaveta desce na mesma medida
+    new ResizeObserver(() => document.getElementById('stage')?.style.setProperty('--toasts-h', `${this.stack.offsetHeight}px`)).observe(this.stack);
     try {
       const p = JSON.parse(localStorage.getItem(PREF) ?? '{}') as { browser?: boolean; sound?: boolean };
       this.browser = !!p.browser && 'Notification' in window && Notification.permission === 'granted';
@@ -42,13 +44,16 @@ export class Notifier {
     if (opts.key) el.dataset.key = opts.key;
     if (opts.sticky) el.dataset.sticky = '1';
     const av = opts.who ? `<span class="av" style="width:34px;height:34px">${this.app.shell.avatarImg(opts.who, 34)}</span>` : `<span class="tic">${icon(opts.ic ?? 'bell')}</span>`;
-    el.innerHTML = `<div class="h">${av}<div><b>${esc(text)}</b></div><button class="x" aria-label="Fechar">${icon('x')}</button></div>${opts.actions ? `<div class="acts">${opts.actions.map((a, i) => `<button class="${a.primary ? 'yes' : 'no'}" data-i="${i}">${esc(a.label)}</button>`).join('')}</div>` : ''}`;
+    // pedidos que esperam resposta mostram há quanto tempo chegaram
+    el.dataset.at = String(Date.now());
+    el.innerHTML = `<div class="h">${av}<div><b>${esc(text)}</b>${opts.sticky && opts.actions ? '<small class="ago">agora</small>' : ''}</div><button class="x" aria-label="Fechar">${icon('x')}</button></div>${opts.actions ? `<div class="acts">${opts.actions.map((a, i) => `<button class="${a.primary ? 'yes' : 'no'}" data-i="${i}">${esc(a.label)}</button>`).join('')}</div>` : ''}`;
     const entry: Entry | null = opts.log === false ? null : { text, at: Date.now(), who: opts.who, key: opts.key, actions: opts.actions, open: !!opts.actions, ic: opts.ic };
-    el.querySelector('.x')!.addEventListener('click', () => el.remove());
+    el.querySelector('.x')!.addEventListener('click', () => { el.remove(); this.app.shell.renderTop(); });
     el.querySelectorAll<HTMLButtonElement>('[data-i]').forEach((b) => b.addEventListener('click', () => {
       el.remove();
       if (entry) entry.open = false;
       opts.actions![+b.dataset.i!].run();
+      this.app.shell.renderTop();
     }));
     this.stack.prepend(el);
     // passou de 4 avisos: saem primeiro os informativos; pedidos que esperam resposta nunca saem
@@ -79,6 +84,18 @@ export class Notifier {
     const match = (k?: string) => !!k && (prefix ? k.startsWith(key) : k === key);
     this.stack.querySelectorAll<HTMLElement>('[data-key]').forEach((el) => { if (match(el.dataset.key)) el.remove(); });
     for (const h of this.history) if (match(h.key)) h.open = false;
+    this.app.shell.renderTop();
+  }
+
+  /** Pedidos esperando resposta desta pessoa (para o contador do sino e o título da aba). */
+  get pending() { return this.history.filter((h) => h.open && h.actions && h.key && /^(knock|door|guest|convask)-/.test(h.key)); }
+
+  /** Atualiza o "há N min" dos pedidos na tela (roda a cada segundo). */
+  tick() {
+    this.stack.querySelectorAll<HTMLElement>('.toast .ago').forEach((el) => {
+      const s = (Date.now() - Number(el.closest<HTMLElement>('.toast')!.dataset.at)) / 1000;
+      el.textContent = s < 60 ? 'agora' : `há ${Math.floor(s / 60)} min`;
+    });
   }
 
   /** Quantos avisos com essa chave estão na tela agora (para juntar avisos iguais). */
@@ -118,6 +135,49 @@ export class Notifier {
       actions: [
         { label: 'Aceitar', primary: true, run: () => app.send({ t: 'knockReply', to: from, accept: true }) },
         { label: 'Agora não', run: () => app.send({ t: 'knockReply', to: from, accept: false }) },
+        { label: 'Te chamo depois', run: () => app.send({ t: 'knockReply', to: from, accept: false, later: true }) },
+      ],
+    });
+  }
+
+  /** Alguém pediu para ser avisado quando esta pessoa ficar livre (ou chegar). */
+  watched(by: string, kind: 'free' | 'arrive', on: boolean) {
+    if (!on || kind !== 'free') return;
+    this.toast(`${this.app.name(by)} quer falar com você quando você estiver livre`, { who: by, ttl: 8000, quiet: true });
+  }
+
+  /** O aviso pedido chegou: a pessoa ficou livre ou entrou no escritório. */
+  watchHit(target: string, kind: 'free' | 'arrive') {
+    const app = this.app;
+    this.toast(`${app.name(target)} ${kind === 'free' ? 'está livre agora' : 'chegou ao escritório'}`, {
+      who: target, important: true, ttl: 30000,
+      actions: [
+        { label: 'Pedir para falar', primary: true, run: () => app.panels.openPerson(target) },
+        { label: 'Ir até lá', run: () => { const p = app.presence.get(target); if (p) app.walkTo(p.x + 0.7, p.z + 0.4); } },
+      ],
+    });
+  }
+
+  /** "Te chamo quando terminar": quem recusou ficou livre e é lembrado. */
+  remind(who: string) {
+    const app = this.app;
+    this.toast(`Você disse que chamaria ${app.name(who)} quando terminasse`, {
+      who, important: true, ttl: 30000,
+      actions: [
+        { label: 'Chamar agora', primary: true, run: () => app.knock(who, '') },
+        { label: 'Ir até lá', run: () => { const p = app.presence.get(who); if (p) app.walkTo(p.x + 0.7, p.z + 0.4); } },
+      ],
+    });
+  }
+
+  /** Pedido para entrar numa conversa reservada. */
+  convAsk(who: string) {
+    const app = this.app;
+    this.toast(`${app.name(who)} pediu para entrar na conversa`, {
+      who, important: true, key: `convask-${who}`, sticky: true,
+      actions: [
+        { label: 'Deixar entrar', primary: true, run: () => app.send({ t: 'convAdmit', who, accept: true }) },
+        { label: 'Agora não', run: () => app.send({ t: 'convAdmit', who, accept: false }) },
       ],
     });
   }
@@ -186,7 +246,19 @@ export class Notifier {
       if (!next && prev.owner !== app.me && !why) return; // quem começou encerrou: o servidor avisa
       return void this.toast(why === 'end' ? 'Você encerrou a sessão de foco para todos.' : 'Você saiu da sessão de foco coletivo.', { log: false, ic: 'focus' });
     }
+    // sessão nova de outra pessoa: todos ficam sabendo e entram com um clique
+    if (next && !prev && next.owner !== app.me && !mine(next) && !app.guest) {
+      const focos = next.blocks.filter((x) => x.kind === 'foco');
+      const plan = focos.length > 1 ? `${focos.length} × ${focos[0].minutes} min` : `${focos[0]?.minutes ?? 0} min`;
+      this.toast(`${app.name(next.owner)} começou um foco coletivo (${plan})`, {
+        who: next.owner, key: 'focus-invite', ttl: 20000, quiet: true, important: true,
+        actions: [{ label: 'Participar', primary: true, run: () => app.focusJoin() }, { label: 'Agora não', run: () => {} }],
+      });
+      return;
+    }
+    if (!next) this.dismiss('focus-invite');
     if (!next || !mine(next)) return;
+    this.dismiss('focus-invite');
     const b = app.focusBlock();
     if (prev?.id === next.id && mine(prev)) {
       const key = `${next.id}:${b?.index}`;
@@ -226,8 +298,20 @@ export class Notifier {
     this.toast('Clique para ouvir as conversas', { key: 'audio', sticky: true, log: false, actions: [{ label: 'Ativar som', primary: true, run: () => void this.app.media.unlockAudio() }] });
   }
 
+  /** Liga as notificações do sistema (pede a permissão do navegador). */
+  async enableBrowser() {
+    if (!('Notification' in window)) return false;
+    const r = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    this.browser = r === 'granted';
+    this.save();
+    if (!this.browser) this.toast('O navegador não liberou as notificações. Dá para ligar depois pelo sino.', { log: false });
+    return this.browser;
+  }
+
   openCenter() {
     this.unread = 0;
+    // o que já está na lista sai da tela (os pedidos continuam respondíveis daqui)
+    this.stack.querySelectorAll('.toast').forEach((t) => t.remove());
     this.app.shell.renderTop();
     const supported = 'Notification' in window;
     this.app.panels.show(`<div class="dh"><span class="dic">${icon('bell')}</span><div><b>Avisos</b><small>Últimas novidades desta sessão</small></div><button class="iconbtn" data-close aria-label="Fechar">${icon('x')}</button></div>
