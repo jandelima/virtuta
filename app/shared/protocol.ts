@@ -3,6 +3,7 @@
 export type Status = 'disp' | 'foco' | 'afk' | 'visita';
 
 import type { StoredLook } from './look';
+import type { Hunt, Pumpkin, Season } from './season';
 export type { StoredLook };
 
 export interface PublicUser {
@@ -103,6 +104,7 @@ export type ClientMsg =
   | { t: 'convAdmit'; who: string; accept: boolean }
   | { t: 'announceStart' }
   | { t: 'announceStop' }
+  | { t: 'pumpkinTake'; id: string }
   | { t: 'door'; open: boolean }
   | { t: 'doorKnock' }
   | { t: 'doorReply'; who: string; accept: boolean }
@@ -154,6 +156,9 @@ export type ServerMsg =
       settings: Settings;
       /** Conteúdo dos quadros fixos das paredes, para desenhar no mapa. */
       walls: Record<string, BoardElement[]>;
+      /** Tema de época ativo agora (e a caça às abóboras dele). */
+      season: Season | null;
+      hunt: Hunt;
       serverTime: number;
     }
   | { t: 'user'; user: PublicUser }
@@ -179,6 +184,9 @@ export type ServerMsg =
   | { t: 'convAsk'; who: string }
   | { t: 'convAskResolved'; who: string; accept: boolean; by: string }
   | { t: 'announce'; announce: Announce | null }
+  | { t: 'season'; season: Season | null }
+  /** Caça às abóboras: abóbora atual, placar e, quando alguém pegou, quem foi. */
+  | { t: 'hunt'; pumpkin: Pumpkin | null; scores: Record<string, number>; by?: string; spawned?: boolean }
   | { t: 'guestResolved'; guest: string; accept: boolean; by: string }
   | { t: 'radioAddResult'; ok: boolean; text: string }
   | { t: 'door'; open: boolean; by: string }

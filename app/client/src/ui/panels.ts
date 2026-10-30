@@ -8,7 +8,7 @@ import { api } from '../api';
 
 // Gaveta lateral com o painel de cada objeto ou função do escritório.
 
-type Kind = 'porta' | 'recepcao' | 'radio' | 'cafe' | 'jogo' | 'foco' | 'sugestoes' | 'pessoa' | 'mesa' | 'bilhetes' | 'outro';
+type Kind = 'porta' | 'recepcao' | 'radio' | 'cafe' | 'jogo' | 'foco' | 'sugestoes' | 'pessoa' | 'mesa' | 'bilhetes' | 'placar' | 'outro';
 
 const head = (ic: string, title: string, sub: string) =>
   `<div class="dh"><span class="dic">${icon(ic)}</span><div><b>${esc(title)}</b><small>${esc(sub)}</small></div><button class="iconbtn" data-close aria-label="Fechar">${icon('x')}</button></div>`;
@@ -79,7 +79,7 @@ export class Panels {
   open(kind: string) {
     const fn: Record<string, () => void> = {
       porta: () => this.door(), recepcao: () => this.reception(), radio: () => this.radio(), cafe: () => this.cafe(),
-      jogo: () => this.game(), foco: () => this.focus(), sugestoes: () => void this.suggestions(),
+      jogo: () => this.game(), foco: () => this.focus(), sugestoes: () => void this.suggestions(), placar: () => this.placar(),
     };
     fn[kind]?.();
   }
@@ -335,6 +335,20 @@ export class Panels {
     if (ok) { const f = this.d.querySelector<HTMLInputElement>('#rUrl'); if (f) f.value = ''; }
     this.refresh('radio');
     if (!ok) this.d.querySelector<HTMLInputElement>('#rUrl')?.select();
+  }
+
+  // ---------- caça às abóboras (Halloween) ----------
+  private placar() {
+    const app = this.app;
+    const rows = app.huntRanking();
+    const pk = app.hunt.pumpkin;
+    const where = pk ? (pk.space === 'sala' ? 'na sala da equipe' : 'no hub') : '';
+    this.show(`<div class="dh"><span class="dic pk">🎃</span><div><b>Caça às abóboras</b><small>Halloween · até 6/11</small></div><button class="iconbtn" data-close aria-label="Fechar">${icon('x')}</button></div>
+      <div class="db2">
+        <p class="${pk ? 'hint-box' : 'muted'}">${pk ? `${icon('smile')}Tem uma abóbora ${where} agora! Quem clicar nela primeiro leva o ponto.` : 'De tempos em tempos aparece uma abóbora na sala da equipe ou no hub. Quem clicar nela primeiro leva o ponto, e quem lidera usa a coroinha de abóbora.'}</p>
+        <h4>Placar</h4>
+        <div class="list">${rows.length ? rows.map(([name, n, id], i) => `<div class="li${id === app.me ? ' mine' : ''}"><span class="rank">${i + 1}</span><span class="av" style="width:30px;height:30px">${app.shell.avatarImg(id, 30)}</span><div><b>${esc(name)}${id === app.me ? ' (você)' : ''}</b></div><span class="score">${n} 🎃</span></div>`).join('') : '<p class="empty">Ninguém pegou nenhuma ainda.</p>'}</div>
+      </div>`, undefined, 'placar');
   }
 
   // ---------- café ----------

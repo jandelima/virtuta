@@ -39,6 +39,10 @@ export const config = {
     apiUrl: (env.LIVEKIT_API_URL ?? (env.LIVEKIT_URL ?? 'ws://localhost:7880').replace(/^ws/, 'http')).replace(/\/$/, ''),
   },
   officeName: env.OFFICE_NAME ?? 'Virtuta',
+  /** Só para testes: força um tema de época ('halloween') ou nenhum ('none'), ignorando a data. */
+  season: env.SEASON ?? '',
+  /** Só para testes: abóboras da caça aparecem em segundos, não em minutos. */
+  huntFast: bool(env.HUNT_FAST),
 };
 
 export const secureCookies = config.publicUrl.startsWith('https://');

@@ -144,3 +144,13 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 - [x] **P10** Conversa reservada, com pedido para entrar.
 - [x] **P12** Falar com a sala toda.
 - [x] **De quebra:** quem entrava no escritório não recebia a lista das conversas já em andamento (só chegava quando alguma mudava); a lista de telas compartilhadas já vistas era zerada a cada redesenho do cartão da conversa.
+
+# Rodada 10 — 30/10: tema de Halloween
+
+- [x] **Período**: liga sozinho de 30/10 a 6/11 (horário de Brasília) e some depois.
+- [x] **Intensidade média**: decoração nos três ambientes e luz mais quente (de dia) ou arroxeada (à noite); o escritório continua claro.
+- [x] **Decoração**: abóboras com rosto aceso, teias com aranhas, morcegos e fantasmas animados, lápides e velas no gramado, caldeirão borbulhando no hub. A reunião fica mais discreta.
+- [x] **Fantasias opcionais** no criador de avatar (chapéu de bruxa, chifrinhos, máscara, cabeça de abóbora, capa com cor); somem do avatar quando o tema acaba.
+- [x] **Interface**: logo e ícone da aba de abóbora, faixa "Feliz Halloween" que se pode fechar, cores de sempre.
+- [x] **Caça às abóboras em corrida**: de tempos em tempos aparece uma abóbora (com facho de luz) na sala ou no hub; quem clicar primeiro leva o ponto. Placar num cavalete no hub e no painel; coroinha de abóbora sobre quem lidera. Quem está em reunião não é avisado.
+- [x] **Reações** 🎃 👻 🦇 🕷️ durante o tema. **Sem som.**

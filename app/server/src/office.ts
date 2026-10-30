@@ -4,6 +4,7 @@ import { sanitizeLook } from '../../shared/look';
 import type { Announce, BoardElement, ClientMsg, Conv, FocusBlock, FocusSession, GameState, Presence, PublicUser, RadioItem, RadioState, ServerMsg, Status } from '../../shared/protocol';
 import { boards, guests, invites, notes, sessions, settings, users } from './db';
 import { closeRoom, joinToken, kick, mediaRoom } from './livekit';
+import { HUNT_SPOTS, seasonAt, type Pumpkin, type Season } from '../../shared/season';
 import { publicGuest, publicUser, randomId, type Who } from './auth';
 import { config } from './config';
 
@@ -33,6 +34,9 @@ const REQUEST_MS = 120_000;
 const ANNOUNCE_MS = 60_000;
 /** Erros do player do YouTube que não passam tentando de novo (vídeo inexistente ou sem incorporação). */
 const RADIO_FATAL = [2, 100, 101, 150];
+/** Caça às abóboras: cada abóbora fica até 4 min; a próxima aparece de 4 a 9 min depois. */
+const PUMPKIN_MS = 4 * 60_000;
+const nextPumpkinIn = () => (config.huntFast ? 5_000 : (4 + Math.random() * 5) * 60_000);
 const BOARD_KINDS = ['stroke', 'sticky', 'text', 'rect', 'ellipse', 'arrow'];
 const num = (n: unknown) => n === undefined || (typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 1e5);
 /** Elemento de quadro bem formado: um valor inválido inutilizaria o quadro para todos. */
@@ -95,6 +99,10 @@ export class Office {
   private announce: (Announce & { timer: NodeJS.Timeout }) | null = null;
   /** Avisos de erro de cada música da rádio (um erro de uma pessoa só não apaga para todos). */
   private radioErrors = new Map<number, Set<string>>();
+  private season: Season | null = this.seasonNow();
+  private pumpkin: Pumpkin | null = null;
+  private nextPumpkin = Date.now() + (config.huntFast ? 5_000 : 2 * 60_000);
+  private lastSpot = -1;
   private editors = new Map<string, Set<string>>();
   private docs = new Map<string, { elements: Map<string, BoardElement>; timer?: NodeJS.Timeout; by: string }>();
 
@@ -109,6 +117,7 @@ export class Office {
     setInterval(() => this.proximity(0.2), 200);
     setInterval(() => this.focusTick(), 1000);
     setInterval(() => this.requestsTick(), 1000);
+    setInterval(() => this.seasonTick(), config.huntFast ? 2_000 : 15_000);
   }
 
   // ---------- conexão ----------
@@ -214,7 +223,8 @@ export class Office {
       return {
         t: 'init', you: p.presence.id, users: [p.user], presence: [p.presence], doorOpen: true,
         radio: { queue: [], current: null, startedAt: 0, listeners: [] }, focus: null, notes: [], noteCounts: {},
-        game: emptyGame(), settings: { officeName: settings.get('officeName') ?? config.officeName }, walls: {}, serverTime: Date.now(),
+        game: emptyGame(), settings: { officeName: settings.get('officeName') ?? config.officeName }, walls: {},
+        season: this.season, hunt: { pumpkin: null, scores: {} }, serverTime: Date.now(),
       };
     }
     const list = [...this.people.values()];
@@ -231,6 +241,8 @@ export class Office {
       game: this.game,
       settings: { officeName: settings.get('officeName') ?? config.officeName },
       walls: Object.fromEntries(WALL_BOARDS.filter((b) => member || b === 'reuniao').map((b) => [b, this.boardElements(b)])),
+      season: this.season,
+      hunt: { pumpkin: this.season ? this.pumpkin : null, scores: this.season ? this.huntScores() : {} },
       serverTime: Date.now(),
     };
   }
@@ -355,6 +367,7 @@ export class Office {
         return;
       }
       case 'announceStart': return this.startAnnounce(p);
+      case 'pumpkinTake': return this.takePumpkin(p, m.id);
       case 'announceStop': {
         if (this.announce?.by === id) this.endAnnounce();
         return;
@@ -764,6 +777,62 @@ export class Office {
     this.announce = null;
     closeRoom(mediaRoom(`anuncio-${a.space}`));
     this.broadcast({ t: 'announce', announce: null });
+  }
+
+  // ---------- tema de época e caça às abóboras ----------
+  private seasonNow(): Season | null {
+    if (config.season === 'none') return null;
+    if (config.season === 'halloween') return 'halloween';
+    return seasonAt(new Date());
+  }
+
+  /** Placar da caça deste ano (guardado no banco, sobrevive a reinícios). */
+  private huntKey() { return `hunt-${new Date().getFullYear()}`; }
+  private huntScores(): Record<string, number> {
+    try { return JSON.parse(settings.get(this.huntKey()) ?? '{}') as Record<string, number>; } catch { return {}; }
+  }
+
+  private broadcastHunt(extra: { by?: string; spawned?: boolean } = {}) {
+    this.broadcast({ t: 'hunt', pumpkin: this.pumpkin, scores: this.huntScores(), ...extra });
+  }
+
+  private seasonTick() {
+    const now = Date.now();
+    const s = this.seasonNow();
+    if (s !== this.season) {
+      this.season = s;
+      this.pumpkin = null;
+      this.nextPumpkin = now + 2 * 60_000;
+      this.broadcast({ t: 'season', season: s });
+      this.broadcastHunt();
+    }
+    if (!this.season) return;
+    // abóbora que ninguém pegou some; a próxima aparece um tempo depois
+    if (this.pumpkin && now > this.pumpkin.until) {
+      this.pumpkin = null;
+      this.nextPumpkin = now + nextPumpkinIn();
+      return this.broadcastHunt();
+    }
+    const someone = [...this.people.values()].some((p) => p.ws && p.user.role !== 'guest' && !p.presence.waiting);
+    if (this.pumpkin || now < this.nextPumpkin || !someone) return;
+    let i = Math.floor(Math.random() * HUNT_SPOTS.length);
+    if (i === this.lastSpot) i = (i + 1) % HUNT_SPOTS.length;
+    this.lastSpot = i;
+    const spot = HUNT_SPOTS[i];
+    this.pumpkin = { id: randomId(6), space: spot.space, x: spot.x, z: spot.z, until: now + PUMPKIN_MS };
+    this.broadcastHunt({ spawned: true });
+  }
+
+  /** Quem clica primeiro leva o ponto; é preciso estar no mesmo ambiente da abóbora. */
+  private takePumpkin(p: Person, id: string) {
+    const pk = this.pumpkin;
+    if (!this.season || !pk || pk.id !== id || p.user.role === 'guest' || acoustic(p.presence) !== pk.space) return;
+    const scores = this.huntScores();
+    scores[p.presence.id] = (scores[p.presence.id] ?? 0) + 1;
+    settings.set(this.huntKey(), JSON.stringify(scores));
+    this.pumpkin = null;
+    this.nextPumpkin = Date.now() + nextPumpkinIn();
+    this.broadcastHunt({ by: p.presence.id });
   }
 
   // ---------- pedidos, prazos e avisos de disponibilidade ----------

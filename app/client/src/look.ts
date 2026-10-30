@@ -72,6 +72,13 @@ export const OUTFIT_NAMES: Record<string, string> = {
 export const GLASSES_NAMES = { none: 'Sem óculos', grau: 'De grau', redondos: 'Redondos', escuros: 'Escuros' };
 export const FACIAL_NAMES = { none: 'Sem barba', bigode: 'Bigode', cavanhaque: 'Cavanhaque', barba: 'Barba' };
 export const HAT_NAMES = { none: 'Sem chapéu', bone: 'Boné', gorro: 'Gorro' };
+export const COSTUME_NAMES = { none: 'Sem fantasia', bruxa: 'Chapéu de bruxa', chifres: 'Chifrinhos', mascara: 'Máscara', abobora: 'Cabeça de abóbora' };
+export const CAPE_COLORS = ['#1c1a22', '#5b2a86', '#9b1c24', '#1f4d3a', '#e8761c'];
+
+/** Fantasias só aparecem enquanto o tema de Halloween está ativo; fora dele, ficam guardadas. */
+let costumesOn = false;
+export function setCostumes(on: boolean) { costumesOn = on; }
+export function costumesActive() { return costumesOn; }
 
 // ---------- leitura das peças do kit ----------
 
@@ -204,6 +211,7 @@ export function resolveLook(stored: StoredLook | null | undefined, kitModel = 'c
     hat: s.hat ?? 'none', hatColor: s.hatColor ?? CLOTH_COLORS[6],
     headphones: s.headphones ?? false, phonesColor: s.phonesColor ?? GEAR_COLORS[0],
     earrings: s.earrings ?? extras.earrings ?? false,
+    costume: s.costume ?? 'none', cape: s.cape ?? false, capeColor: s.capeColor ?? CAPE_COLORS[0],
   };
 }
 
@@ -257,6 +265,22 @@ class Builder {
     g.dispose();
   }
 
+  /** Peça de forma livre (cone, cilindro) presa a um osso, para o que não é bloco. */
+  shape(bone: number, geo: THREE.BufferGeometry, m: THREE.Matrix4, hex: string) {
+    const g = (geo.index ? geo.toNonIndexed() : geo).applyMatrix4(m);
+    const c = new THREE.Color(hex);
+    const p = g.attributes.position, n = g.attributes.normal;
+    for (let i = 0; i < p.count; i++) {
+      this.pos.push(p.getX(i), p.getY(i), p.getZ(i));
+      this.nor.push(n.getX(i), n.getY(i), n.getZ(i));
+      this.col.push(c.r, c.g, c.b);
+      this.bones.push(bone);
+      this.top = Math.max(this.top, p.getY(i));
+    }
+    g.dispose();
+    geo.dispose();
+  }
+
   geometry() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
@@ -274,10 +298,56 @@ const HEAD_BONE = 6;
 const HAT_CUT = { bone: 0.59, gorro: 0.58 } as const;
 const LENS_CLEAR = '#dfe6ee', LENS_DARK = '#1c1f26', BAND = '#2b2f37';
 
+const PUMPKIN = '#e8761c', PUMPKIN_DARK = '#c45c10', CARVED = '#ffd34d', STEM = '#5b4a1e';
+
+/** Cabeça de abóbora: cobre a cabeça inteira, com o rosto entalhado e iluminado por dentro. */
+function pumpkinHead(b: Builder) {
+  b.box(HEAD_BONE, 0, 0.53, 0, 0.46, 0.38, 0.42, PUMPKIN, 0.12);
+  for (const x of [-0.12, 0, 0.12]) b.box(HEAD_BONE, x, 0.53, 0, 0.05, 0.39, 0.43, PUMPKIN_DARK, 0.02);
+  b.box(HEAD_BONE, 0, 0.74, 0, 0.05, 0.08, 0.05, STEM, 0.012);
+  for (const sx of [-1, 1]) {
+    b.box(HEAD_BONE, sx * 0.085, 0.585, 0.212, 0.075, 0.05, 0.01, CARVED, 0.004);
+    b.box(HEAD_BONE, sx * 0.085, 0.612, 0.212, 0.035, 0.03, 0.01, CARVED, 0.004);
+  }
+  b.box(HEAD_BONE, 0, 0.53, 0.212, 0.035, 0.03, 0.01, CARVED, 0.004);
+  b.box(HEAD_BONE, 0, 0.455, 0.212, 0.22, 0.045, 0.01, CARVED, 0.006);
+  for (const x of [-0.06, 0.04]) b.box(HEAD_BONE, x, 0.47, 0.218, 0.03, 0.022, 0.01, PUMPKIN, 0.003);
+}
+
+/** Acessórios de Halloween presos à cabeça (por cima do resto). */
+function costumeHead(b: Builder, look: Look) {
+  if (look.costume === 'bruxa') {
+    // aba larga, copa cônica um pouco tombada para trás e a ponta dobrada
+    const black = '#23202b', band = '#7b3fa0';
+    const at = (x: number, y: number, z: number, rx = 0, rz = 0) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, 0, rz)), new THREE.Vector3(1, 1, 1));
+    b.shape(HEAD_BONE, new THREE.CylinderGeometry(0.31, 0.31, 0.02, 28), at(0, 0.605, 0), black);
+    b.shape(HEAD_BONE, new THREE.CylinderGeometry(0.11, 0.18, 0.2, 20), at(0, 0.71, -0.01, -0.08), black);
+    b.shape(HEAD_BONE, new THREE.CylinderGeometry(0.185, 0.185, 0.05, 20), at(0, 0.64, 0, -0.04), band);
+    b.shape(HEAD_BONE, new THREE.ConeGeometry(0.11, 0.2, 18), at(0, 0.9, -0.04, -0.2), black);
+    b.shape(HEAD_BONE, new THREE.ConeGeometry(0.045, 0.13, 12), at(0, 1.0, -0.1, -1.2), black);
+  }
+  if (look.costume === 'chifres') {
+    for (const sx of [-1, 1]) {
+      b.box(HEAD_BONE, sx * 0.1, 0.71, 0.03, 0.06, 0.07, 0.06, '#c0262d', 0.02);
+      b.box(HEAD_BONE, sx * 0.118, 0.765, 0.035, 0.04, 0.06, 0.04, '#c0262d', 0.015);
+      b.box(HEAD_BONE, sx * 0.13, 0.81, 0.04, 0.022, 0.04, 0.022, '#c0262d', 0.008);
+    }
+  }
+  if (look.costume === 'mascara') {
+    b.box(HEAD_BONE, 0, 0.497, 0.178, 0.33, 0.08, 0.02, '#4a2370', 0.02);
+    for (const sx of [-1, 1]) b.box(HEAD_BONE, sx * 0.066, 0.499, 0.19, 0.07, 0.04, 0.006, '#0d0d12', 0.01);
+    for (const sx of [-1, 1]) b.box(HEAD_BONE, sx * 0.17, 0.512, 0.17, 0.03, 0.03, 0.01, '#f2c14e', 0.006);
+  }
+}
+
 function buildHead(look: Look) {
   const b = new Builder();
+  const costume = costumesOn ? look.costume : 'none';
+  if (costume === 'abobora') { pumpkinHead(b); return b.geometry(); }
+  // o chapéu de bruxa toma o lugar do chapéu normal
+  if (costume === 'bruxa') look = { ...look, hat: 'none' };
   const hairModel = look.hairStyle === 'none' ? null : look.hairStyle;
-  const hatCut = look.hat === 'none' ? Infinity : HAT_CUT[look.hat];
+  const hatCut = costume === 'bruxa' ? 0.6 : look.hat === 'none' ? Infinity : HAT_CUT[look.hat];
   // crânio e cabelo do penteado; olhos e boca do rosto escolhido
   for (const t of tris(hairModel ?? look.face, 'head-mesh')) {
     const s = headSlot(hairModel ?? look.face, t);
@@ -327,15 +397,18 @@ function buildHead(look: Look) {
   }
   if (look.headphones) {
     // o arco passa rente ao crânio (afunda nos coques) ou por cima do chapéu
-    const top = look.hat === 'bone' ? 0.708 : look.hat === 'gorro' ? 0.758 : Math.min(b.top, 0.69) + 0.008;
+    const top = costume === 'bruxa' ? 0.62 : look.hat === 'bone' ? 0.708 : look.hat === 'gorro' ? 0.758 : Math.min(b.top, 0.69) + 0.008;
     b.box(HEAD_BONE, 0, top, 0, 0.4, 0.024, 0.05, BAND, 0.008);
     for (const sx of [-1, 1]) {
       b.box(HEAD_BONE, sx * 0.205, (top + 0.53) / 2, 0, 0.02, top - 0.53, 0.044, BAND, 0.006);
       b.box(HEAD_BONE, sx * 0.224, 0.49, 0, 0.046, 0.115, 0.1, look.phonesColor, 0.018);
     }
   }
+  if (costume !== 'none') costumeHead(b, { ...look, costume });
   return b.geometry();
 }
+
+const TORSO_BONE = 3;
 
 function buildBody(look: Look) {
   const b = new Builder();
@@ -351,6 +424,15 @@ function buildBody(look: Look) {
       : s === 'shoes' ? look.shoes : s === 'sole' ? `#${sole}` : null;
     if (s !== 'drop') b.kit(t, hex);
   });
+  // capa de Halloween: presa ao tronco, dos ombros até perto dos joelhos, pelas costas
+  if (costumesOn && look.cape) {
+    const torso = list.filter((t, i) => t.part === 'torso' && slots[i] !== 'drop');
+    const xs = torso.map((t) => t.c.x), ys = torso.map((t) => t.c.y), zs = torso.map((t) => t.c.z);
+    const w = (Math.max(...xs) - Math.min(...xs)) * 1.15 + 0.04, top = Math.max(...ys), back = Math.min(...zs) - 0.03;
+    const bottom = 0.1;
+    b.box(TORSO_BONE, 0, (top + bottom) / 2, back, w, top - bottom, 0.025, look.capeColor, 0.01);
+    b.box(TORSO_BONE, 0, top + 0.02, back + 0.02, w + 0.04, 0.06, 0.05, look.capeColor, 0.015);
+  }
   return b.geometry();
 }
 

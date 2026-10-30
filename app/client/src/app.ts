@@ -13,6 +13,9 @@ import { renderPortraits } from './ui/portraits';
 import { esc } from './ui/dom';
 import { buildEscritorio, type World } from './world/escritorio';
 import { mergeStatic } from './world/optimize';
+import { animateHalloween, finishHalloween, huntPumpkin, setHalloween, setPlacar } from './world/halloween';
+import { setCostumes } from './look';
+import type { Hunt, Season } from '../../shared/season';
 import { boardTex, gameTex, tvTex } from './world/live';
 import { nameplateTex } from './world/props';
 import type { Interactive, Seat, Space } from './world/space';
@@ -69,6 +72,9 @@ export class OfficeApp {
   /** Avisos pedidos ("quando ficar livre", "quando chegar"): de quem → tipo. */
   watching = new Map<string, 'free' | 'arrive'>();
   announce: Announce | null = null;
+  season: Season | null = null;
+  hunt: Hunt = { pumpkin: null, scores: {} };
+  private huntObj: THREE.Group | null = null;
   followUntil = 0;
   followId: string | null = null;
   /** Atravessando uma porta (tela escurecida): não anda nem atravessa de novo. */
@@ -126,6 +132,8 @@ export class OfficeApp {
       // quem vê um ambiente está dentro dele: as paredes de vidro ficam baixas, sem esconder ninguém
       for (const c of sp.cutaways) { c.upper.visible = false; c.cap.visible = true; }
     }
+    // a decoração de época fica em grupos próprios (liga e desliga), juntados à parte
+    finishHalloween((g) => mergeStatic(g));
     console.info(`Cenário: ${before} malhas juntadas em ${after}`);
     this.sc.setSpace(this.world.spaces.sala);
     this.setupInteractives();
@@ -155,6 +163,7 @@ export class OfficeApp {
       if (a.root.visible !== vis) a.setActive(vis);
     }
     for (const t of this.hubTags) t.visible = here === 'hub';
+    if (this.huntObj) this.huntObj.visible = !!this.season && this.hunt.pumpkin?.space === here;
   }
 
   // ---------- mensagens do servidor ----------
@@ -191,6 +200,8 @@ export class OfficeApp {
       case 'convAsk': return this.notify.convAsk(m.who);
       case 'convAskResolved': return this.notify.dismiss(`convask-${m.who}`);
       case 'announce': return this.setAnnounce(m.announce);
+      case 'season': return this.setSeason(m.season);
+      case 'hunt': return this.setHunt({ pumpkin: m.pumpkin, scores: m.scores }, m.by, m.spawned);
       case 'guestResolved': return this.notify.dismiss(`guest-${m.guest}`);
       case 'radioAddResult': return this.panels.radioAdded(m.ok, m.text);
       case 'door': return this.setDoor(m.open, m.by);
@@ -251,6 +262,8 @@ export class OfficeApp {
     this.noteCounts = m.noteCounts;
     this.game = m.game;
     this.settings = m.settings;
+    this.setSeason(m.season, true);
+    this.hunt = m.hunt;
     for (const [id, els] of Object.entries(m.walls)) this.setWall(id, els);
     // reconexão: refaz os avatares a partir do estado atual do servidor
     const keep = new Set(m.presence.map((p) => p.id));
@@ -274,6 +287,7 @@ export class OfficeApp {
     this.refreshDesks();
     this.refreshGame();
     this.refreshTv();
+    this.setHunt(this.hunt);
     this.setDoor(this.doorOpen, '', true);
     this.radioPlayer.sync();
     this.shell.renderAll();
@@ -376,6 +390,7 @@ export class OfficeApp {
     if (a && p.id !== this.me && fromInit) a.follow(p.x, p.z, p.rot, this.seat(p.seat));
     a?.setPerson(this.person(p.id));
 
+    if (a && this.season) { const top = Math.max(0, ...Object.values(this.hunt.scores)); a.setCrown(top > 0 && (this.hunt.scores[p.id] ?? 0) === top); }
     if (!fromInit) this.shell.renderPeople();
     if (p.id === this.me && !fromInit) { this.shell.renderMe(); this.shell.renderDock(); }
     if (!fromInit && prev?.hand !== p.hand) this.convView.render();
@@ -485,6 +500,7 @@ export class OfficeApp {
     const me = this.myAvatar;
     if (!me || this.myPresence?.waiting) return;
     const r = this.sc.renderer.domElement.getBoundingClientRect();
+    if (this.pumpkinAt(cx - r.left, cy - r.top)) return this.takePumpkin();
     const other = this.personUnderMouse(cx - r.left, cy - r.top);
     if (other) return this.panels.openPerson(other);
     const obj = this.interactiveAt(cx - r.left, cy - r.top);
@@ -627,6 +643,7 @@ export class OfficeApp {
     // depois de parar, a transição de andar para parado continua fluida por um tempo
     if (!this.myPresence?.waiting && !this.crossing && me.steer(mx, mz, dt, this.space.nav)) { this.followId = null; this.pending = null; this.sc.wake(1500); }
     for (const a of this.avatars.values()) a.update(dt);
+    if (this.season) this.animateSeason(performance.now() / 1000);
     this.separate();
     this.checkDoors();
     if (this.mouseMoved) { this.mouseMoved = false; this.updateHover(); }
@@ -721,6 +738,7 @@ export class OfficeApp {
 
   /** Se o objeto pode ser usado agora por esta pessoa. */
   private usable(it: Interactive) {
+    if (it.id === 'placar') return this.season === 'halloween';
     if (it.id === 'seat') {
       if (this.guest && it.seats.some((id) => { const s = this.seat(id)!; return inside(SALA, s.x, s.z); })) return false;
       return !!this.freeSeat(it);
@@ -800,10 +818,11 @@ export class OfficeApp {
     // contorno com espessura constante na tela, qualquer que seja o zoom
     const cam = this.sc.camera;
     this.highlight.setPixels(3, (cam.top - cam.bottom) / cam.zoom / Math.max(1, this.sc.renderer.domElement.clientHeight));
-    this.sc.renderer.domElement.style.cursor = person || hov ? 'pointer' : '';
+    const onPumpkin = !blocked && this.pumpkinAt(this.mouse.x, this.mouse.y);
+    this.sc.renderer.domElement.style.cursor = person || hov || onPumpkin ? 'pointer' : '';
     const tip = this.hoverTip;
     // sobre um colega, a mesma dica dos objetos: quem é, como está e o que o clique faz
-    const pd = person ? this.describePerson(person) : null;
+    const pd = onPumpkin ? { title: 'Abóbora! 🎃', hint: 'Clique para pegar antes dos outros' } : person ? this.describePerson(person) : null;
     if (hov || pd) {
       const d = pd ?? this.describe(hov!.it);
       tip.innerHTML = d.title ? `<b>${esc(d.title)}</b><span>${esc(d.hint)}</span>` : `<span>${esc(d.hint)}</span>`;
@@ -872,6 +891,7 @@ export class OfficeApp {
     if (!this.usable(it)) return;
     const [kind, arg] = it.id.split(':');
     if (kind === 'board') return void this.panels.openBoard(arg);
+    if (kind === 'placar') return this.panels.open('placar');
     if (kind === 'mesa') return this.panels.openDesk(Number(arg));
     if (kind === 'door') {
       // dentro da reunião, a porta abre o painel (fechar, abrir ou sair); de fora, quem não pode entrar bate
@@ -1020,6 +1040,83 @@ export class OfficeApp {
     if (this.panels.showing('pessoa', id)) this.panels.refresh('pessoa');
   }
   lockConv(locked: boolean) { this.send({ t: 'convLock', locked }); }
+
+  // ---------- tema de época e caça às abóboras ----------
+  /** Liga ou desliga o tema: decoração, luz, fantasias dos avatares, interface. */
+  private setSeason(s: Season | null, quiet = false) {
+    const changed = s !== this.season;
+    this.season = s;
+    const hw = s === 'halloween';
+    setCostumes(hw);
+    setHalloween(hw);
+    this.sc.season = s;
+    if (this.world) this.sc.applyTheme(this.sc.theme);
+    if (changed) {
+      for (const a of this.avatars.values()) a.remount();
+      if (this.world) this.sc.refreshShadows();
+    }
+    this.shell.renderSeason();
+    if (changed && !quiet && hw) this.notify.toast('Começou o Halloween no escritório! 🎃 Fique de olho nas abóboras.', { log: false, ic: 'smile' });
+    if (!hw) this.setHunt({ pumpkin: null, scores: {} });
+  }
+
+  /** Ranking da caça: nome curto e pontos, do maior para o menor. */
+  huntRanking(): [string, number, string][] {
+    return Object.entries(this.hunt.scores).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1] || this.name(a[0]).localeCompare(this.name(b[0]))).map(([id, n]) => [this.shortName(id), n, id]);
+  }
+
+  private setHunt(h: Hunt, by?: string, spawned?: boolean) {
+    this.hunt = h;
+    if (!this.world) return;
+    const pk = this.season ? h.pumpkin : null;
+    if (pk && !this.huntObj) { this.huntObj = huntPumpkin(); this.sc.scene.add(this.huntObj); }
+    if (this.huntObj) {
+      this.huntObj.visible = !!pk && pk.space === this.here;
+      if (pk) this.huntObj.position.set(pk.x, 0, pk.z);
+    }
+    setPlacar(this.huntRanking().map(([n, k]) => [n, k]));
+    // coroinha para quem lidera (empates dividem a coroa)
+    const top = Math.max(0, ...Object.values(h.scores));
+    for (const [id, a] of this.avatars) a.setCrown(top > 0 && (h.scores[id] ?? 0) === top);
+    this.panels.refresh('placar');
+    this.sc.wake();
+    if (!this.season || this.guest) return;
+    const where = (sp: string) => (sp === 'sala' ? 'na sala da equipe' : 'no hub');
+    // quem está numa reunião não é distraído com a caça
+    if (spawned && pk && this.here !== 'reuniao') this.notify.toast(`🎃 Uma abóbora apareceu ${where(pk.space)}! Quem clicar nela primeiro leva o ponto.`, { key: 'pumpkin', ttl: 12000, quiet: true, important: true, log: false, ic: 'smile' });
+    if (by) {
+      this.notify.dismiss('pumpkin');
+      const n = h.scores[by] ?? 0;
+      this.notify.toast(by === this.me ? `Você pegou a abóbora! Agora você tem ${n} 🎃` : `${this.shortName(by)} pegou a abóbora (${n} no total)`, { who: by, ttl: 5000, log: false });
+    }
+    if (!pk) this.notify.dismiss('pumpkin');
+  }
+
+  /** A abóbora da caça está sob este ponto da tela (em pixels do canvas)? */
+  private pumpkinAt(px: number, py: number) {
+    const o = this.huntObj;
+    if (!o?.visible) return false;
+    const s = this.sc.toScreen(o.position.clone().setY(0.25));
+    return Math.hypot(s.x - px, s.y - py) < 34 * Math.max(0.8, this.sc.camera.zoom);
+  }
+
+  private takePumpkin() {
+    const pk = this.hunt.pumpkin;
+    if (!pk) return;
+    if (this.guest) return this.notify.toast('A caça às abóboras é da equipe.', { log: false });
+    this.send({ t: 'pumpkinTake', id: pk.id });
+  }
+
+  private animateSeason(t: number) {
+    animateHalloween(this.space, t);
+    const o = this.huntObj;
+    if (o?.visible) {
+      (o.userData.bob as THREE.Object3D).position.y = 0.05 + Math.abs(Math.sin(t * 2.2)) * 0.12;
+      (o.userData.bob as THREE.Object3D).rotation.y = Math.PI / 4 + Math.sin(t * 1.3) * 0.3;
+      const ring = o.userData.ring as THREE.Mesh;
+      ring.scale.setScalar(1 + (Math.sin(t * 3) + 1) * 0.12);
+    }
+  }
 
   // ---------- anúncio para a sala ----------
   private setAnnounce(a: Announce | null) {

@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import {
-  CLOTH_COLORS, FACE_NAMES, FACIAL_NAMES, GEAR_COLORS, GLASSES_NAMES, HAIR_COLORS, HAIR_NAMES, HAT_NAMES, OUTFIT_NAMES, SKIN_TONES,
-  buildCharacter, disposeCharacter, hasDetail, type Look,
+  CAPE_COLORS, CLOTH_COLORS, COSTUME_NAMES, FACE_NAMES, FACIAL_NAMES, GEAR_COLORS, GLASSES_NAMES, HAIR_COLORS, HAIR_NAMES, HAT_NAMES, OUTFIT_NAMES, SKIN_TONES,
+  buildCharacter, costumesActive, disposeCharacter, hasDetail, type Look,
 } from '../look';
-import { FACES, FACIAL, GLASSES, HAIR_STYLES, HATS, OUTFITS } from '../../../shared/look';
+import { COSTUMES, FACES, FACIAL, GLASSES, HAIR_STYLES, HATS, OUTFITS } from '../../../shared/look';
 import { icon } from './icons';
 import { esc } from './dom';
 
@@ -14,7 +14,7 @@ const PREVIEW_W = 360, PREVIEW_H = 440, THUMB = 120;
 /** Imagem vazia enquanto a miniatura não fica pronta. */
 const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 type Tab = 'rosto' | 'cabelo' | 'roupa' | 'acessorios';
-type ColorKey = 'skin' | 'hair' | 'top' | 'detail' | 'bottom' | 'shoes' | 'frame' | 'hatColor' | 'phonesColor';
+type ColorKey = 'skin' | 'hair' | 'top' | 'detail' | 'bottom' | 'shoes' | 'frame' | 'hatColor' | 'phonesColor' | 'capeColor';
 type Shot = 'head' | 'body';
 
 function lights(scene: THREE.Scene) {
@@ -72,6 +72,8 @@ function randomLook(): Look {
     facial: chance(0.25) ? pick(FACIAL.slice(1)) : 'none',
     hat: chance(0.2) ? pick(HATS.slice(1)) : 'none', hatColor: pick(CLOTH_COLORS),
     headphones: chance(0.15), phonesColor: pick(GEAR_COLORS), earrings: chance(0.2),
+    // no Halloween, o "Surpreenda-me" às vezes também fantasia
+    costume: costumesActive() && chance(0.5) ? pick(COSTUMES.slice(1)) : 'none', cape: costumesActive() && chance(0.3), capeColor: pick(CAPE_COLORS),
   };
 }
 
@@ -235,7 +237,12 @@ export function openAvatarEditor(initial: Look, name: string, onSave: (look: Loo
         + (look.hat !== 'none' ? colors('Cor do chapéu', 'hatColor', CLOTH_COLORS) : '')
         + grid('Fone de ouvido', 'head', [false, true], { false: 'Sem fone', true: 'Com fone' }, look.headphones, (headphones) => ({ headphones }))
         + (look.headphones ? colors('Cor do fone', 'phonesColor', GEAR_COLORS) : '')
-        + grid('Brincos', 'head', [false, true], { false: 'Sem brincos', true: 'Com brincos' }, look.earrings, (earrings) => ({ earrings }));
+        + grid('Brincos', 'head', [false, true], { false: 'Sem brincos', true: 'Com brincos' }, look.earrings, (earrings) => ({ earrings }))
+        // fantasias só durante o Halloween (e somem do avatar quando o tema acaba)
+        + (costumesActive() ? `<p class="ae-season">🎃 Fantasias de Halloween: valem até 6/11. Depois, o avatar volta ao normal sozinho.</p>`
+          + grid('Fantasia', 'head', COSTUMES, COSTUME_NAMES, look.costume, (costume) => ({ costume }))
+          + grid('Capa', 'body', [false, true], { false: 'Sem capa', true: 'Com capa' }, look.cape, (cape) => ({ cape }))
+          + (look.cape ? colors('Cor da capa', 'capeColor', CAPE_COLORS) : '') : '');
     optsEl.scrollTop = top;
     if (!pumping && queue.length) pumping = requestAnimationFrame(pump);
   }

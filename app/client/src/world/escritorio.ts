@@ -6,6 +6,7 @@ import { carpet, concrete, drawn, planks, tiles } from './textures';
 import { easel, nameplate, officeChair, panel, signTex, stickyNote, tree } from './props';
 import { SEAT_Y, chairAt, floorMat, plant } from './office';
 import { boardTex, gameTex, tvTex } from './live';
+import { decorateHub, decorateReuniao, decorateSala } from './halloween';
 
 // Escritório em três ambientes, cada um uma cena: a sala da equipe (inspirada na sala real),
 // onde todos entram; o hub, com café, jogo e caixa de sugestões; e a sala de reunião.
@@ -332,6 +333,7 @@ function buildSala(boards: Map<string, THREE.MeshStandardMaterial>) {
   for (const k of [0, 1, 2]) sp.lamp(2.8, 2.2, 3.4 + k * 4.4, '#ffd6a0', 5, 7);
   sp.lamp(6.4, 2.2, 7.8, '#ffd6a0', 4, 8);
 
+  decorateSala(sp, SALA, low);
   sp.finalize();
   return { space: sp, desks, low };
 }
@@ -399,6 +401,7 @@ function buildHub() {
   sp.lamp(X + 2.8, 2.2, 3.2, '#ffd6a0', 5, 7);
   sp.lamp(GX, 2.2, GZ, '#ffd6a0', 4, 6);
 
+  decorateHub(sp, HUB);
   sp.finalize();
   return { space: sp, game, light: meet.lightMat };
 }
@@ -454,6 +457,7 @@ function buildReuniao(boards: Map<string, THREE.MeshStandardMaterial>, low: numb
   // o vão da porta é clicável mesmo aberto
   doorway(sp, toHub, 'Porta da sala de reunião', 'Abrir, fechar ou sair');
 
+  decorateReuniao(sp, R);
   sp.finalize();
   return { space: sp, tv, door: leafDoor };
 }

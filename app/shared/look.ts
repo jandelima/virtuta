@@ -8,6 +8,8 @@ export const OUTFITS = ['male-a', 'male-b', 'female-b', 'female-e', 'male-e', 'f
 export const GLASSES = ['none', 'grau', 'redondos', 'escuros'] as const;
 export const FACIAL = ['none', 'bigode', 'cavanhaque', 'barba'] as const;
 export const HATS = ['none', 'bone', 'gorro'] as const;
+/** Fantasias de Halloween: só aparecem (e só se escolhem) enquanto o tema está ativo. */
+export const COSTUMES = ['none', 'bruxa', 'chifres', 'mascara', 'abobora'] as const;
 
 export type HairStyle = (typeof HAIR_STYLES)[number];
 export type Face = (typeof FACES)[number];
@@ -32,6 +34,9 @@ export interface Look {
   headphones: boolean;
   phonesColor: string;
   earrings: boolean;
+  costume: (typeof COSTUMES)[number];
+  cape: boolean;
+  capeColor: string;
 }
 
 /**
@@ -40,7 +45,7 @@ export interface Look {
  */
 export type StoredLook = Partial<Look> & { head?: string; body?: string; gender?: string };
 
-const COLOR_KEYS = ['skin', 'hair', 'top', 'detail', 'bottom', 'shoes', 'frame', 'hatColor', 'phonesColor'] as const;
+const COLOR_KEYS = ['skin', 'hair', 'top', 'detail', 'bottom', 'shoes', 'frame', 'hatColor', 'phonesColor', 'capeColor'] as const;
 const hex = (v: unknown) => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : undefined;
 const pick = <T extends string>(list: readonly T[], v: unknown) => list.find((x) => x === v);
 
@@ -62,6 +67,8 @@ export function sanitizeLook(raw: unknown): StoredLook | null {
   const h = pick(HATS, r.hat); if (h) out.hat = h;
   if (typeof r.headphones === 'boolean') out.headphones = r.headphones;
   if (typeof r.earrings === 'boolean') out.earrings = r.earrings;
+  const co = pick(COSTUMES, r.costume); if (co) out.costume = co;
+  if (typeof r.cape === 'boolean') out.cape = r.cape;
   // no formato antigo, óculos e barba vinham desenhados em alguns personagens: viram opções
   if (typeof r.head === 'string' && r.hairStyle === undefined) Object.assign(out, { ...kitExtras(r.head), ...out });
   return Object.keys(out).length ? out : null;

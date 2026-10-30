@@ -61,6 +61,8 @@ export class Scene3D {
   private lowPower = false;
   space!: Space;
   theme: Theme = 'day';
+  /** Tema de época: no Halloween, a luz fica mais quente (de dia) e arroxeada (à noite). */
+  season: string | null = null;
   zoom = 1.15;
   /** Pessoa que a câmera acompanha. */
   follow: () => THREE.Vector3 = () => this.camTarget;
@@ -171,11 +173,12 @@ export class Scene3D {
     this.theme = theme;
     const night = theme === 'night';
     document.documentElement.dataset.theme = night ? 'dark' : 'light';
-    this.scene.background = new THREE.Color(night ? '#0d1015' : '#e2e5e9');
-    this.hemi.color.set(night ? '#7486b3' : '#ffffff');
+    const hw = this.season === 'halloween';
+    this.scene.background = new THREE.Color(night ? (hw ? '#110d17' : '#0d1015') : hw ? '#e6ddd6' : '#e2e5e9');
+    this.hemi.color.set(night ? (hw ? '#8a76b8' : '#7486b3') : hw ? '#fff0e0' : '#ffffff');
     this.hemi.groundColor.set(night ? '#2a2520' : '#d9d2c4');
     this.hemi.intensity = night ? 0.6 : 2.1;
-    this.sun.color.set(night ? '#9fb3ff' : '#fff1de');
+    this.sun.color.set(night ? (hw ? '#b39cff' : '#9fb3ff') : hw ? '#ffd9ae' : '#fff1de');
     this.sun.intensity = night ? 0.45 : 1.9;
     this.sun.shadow.intensity = night ? 0.6 : 0.42;
     (this.ground.material as THREE.MeshStandardMaterial).color.set(night ? '#151a20' : '#d6dad5');

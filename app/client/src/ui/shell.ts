@@ -71,6 +71,32 @@ export class Shell {
   }
 
   readonly exitAsk = document.createElement('div');
+  private seasonBar = document.createElement('div');
+  private brandSvg = '';
+
+  /** Detalhes do tema de época na interface: logo, faixa (que se pode fechar) e ícone da aba. */
+  renderSeason() {
+    const app = this.app;
+    const hw = app.season === 'halloween';
+    document.documentElement.dataset.season = app.season ?? '';
+    const brand = document.querySelector<SVGElement>('.brand svg');
+    if (brand) {
+      this.brandSvg ||= brand.innerHTML;
+      brand.innerHTML = hw
+        ? '<circle cx="12" cy="13.5" r="9" fill="#e8761c"/><path d="M12 4.5c0-1.8.8-2.8 2.2-3.2" stroke="#5b4a1e" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M7.2 11.5l1.8-2.6 1.8 2.6zM13.2 11.5l1.8-2.6 1.8 2.6zM7 15.5h10l-1.6 2.6-1.6-1.4-1.8 1.6-1.8-1.6-1.6 1.4z" fill="#ffd34d"/>'
+        : this.brandSvg;
+    }
+    setFavicon(this.pendingCount() > 0, true);
+    const bar = this.seasonBar;
+    if (!bar.parentElement) { bar.className = 'season-bar'; $('stage').appendChild(bar); }
+    let closed = false;
+    try { closed = localStorage.getItem(SEASON_KEY) === String(new Date().getFullYear()); } catch { /* mostra */ }
+    bar.hidden = !hw || closed;
+    if (bar.hidden) return;
+    bar.innerHTML = `<span class="pk">🎃</span><span><b>Feliz Halloween!</b> Abóboras aparecem na sala e no hub de tempos em tempos: quem clicar primeiro leva o ponto.</span><button id="seasonPlacar">Placar</button><button class="x" id="seasonX" aria-label="Fechar">${icon('x')}</button>`;
+    document.getElementById('seasonPlacar')!.onclick = () => app.panels.open('placar');
+    document.getElementById('seasonX')!.onclick = () => { try { localStorage.setItem(SEASON_KEY, String(new Date().getFullYear())); } catch { /* vale até recarregar */ } bar.hidden = true; };
+  }
   private announceEl = document.createElement('div');
 
   /** Faixa no alto da cena enquanto alguém fala para o ambiente. */
@@ -391,7 +417,8 @@ export class Shell {
     const r = $('reactions');
     r.hidden = !r.hidden;
     if (r.hidden) return;
-    r.innerHTML = ['👋', '👍', '😂', '🎉', '❤️', '☕', '👀', '🙏'].map((e) => `<button>${e}</button>`).join('');
+    // no Halloween, as reações ganham abóbora, fantasma, morcego e aranha
+    r.innerHTML = [...['👋', '👍', '😂', '🎉', '❤️', '☕', '👀', '🙏'], ...(this.app.season === 'halloween' ? ['🎃', '👻', '🦇', '🕷️'] : [])].map((e) => `<button>${e}</button>`).join('');
     r.onclick = (e) => {
       const b = (e.target as HTMLElement).closest('button');
       if (b) { this.app.react(b.textContent!); r.hidden = true; }
@@ -473,13 +500,21 @@ export class Shell {
 
 const GUIDE_KEY = 'virtuta.guide';
 
-/** Ícone da aba com um ponto vermelho quando há pendências. */
-let faviconOn: boolean | null = null;
-function setFavicon(on: boolean) {
-  if (faviconOn === on) return;
-  faviconOn = on;
+const SEASON_KEY = 'virtuta.seasonBar';
+
+/** Ícone da aba com um ponto vermelho quando há pendências (e de abóbora no Halloween). */
+let faviconOn: string | null = null;
+let faviconPumpkin = false;
+function setFavicon(on: boolean, refresh = false) {
+  if (refresh) faviconPumpkin = document.documentElement.dataset.season === 'halloween';
+  const key = `${on}|${faviconPumpkin}`;
+  if (faviconOn === key) return;
+  faviconOn = key;
   const dot = on ? "%3Ccircle cx='19' cy='5' r='5' fill='%23e5484d' stroke='white' stroke-width='1.5'/%3E" : '';
-  const href = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='7' fill='%233b5bdb'/%3E%3Cpath d='M7 8l5 9 5-9' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E${dot}%3C/svg%3E`;
+  const logo = faviconPumpkin
+    ? "%3Ccircle cx='12' cy='13.5' r='10' fill='%23e8761c'/%3E%3Cpath d='M7 11.5l2-3 2 3zM13 11.5l2-3 2 3zM6.5 15.5h11l-1.8 3-1.8-1.6-1.9 1.8-1.9-1.8-1.8 1.6z' fill='%23ffd34d'/%3E"
+    : "%3Crect width='24' height='24' rx='7' fill='%233b5bdb'/%3E%3Cpath d='M7 8l5 9 5-9' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E";
+  const href = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E${logo}${dot}%3C/svg%3E`;
   const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (link) link.href = href;
 }

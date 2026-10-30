@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { crown } from './world/halloween';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { buildCharacter, disposeCharacter, resolveLook } from './look';
 import type { NavGrid } from './world/nav';
@@ -90,6 +91,21 @@ export class Avatar {
   }
 
   /** Cria (ou recria, ao trocar o visual) o modelo e as animações, mantendo a pose atual. */
+  /** Remonta o visual (o tema de época mudou e as fantasias aparecem ou somem). */
+  remount() { this.mount(); }
+
+  private crownObj: THREE.Object3D | null = null;
+  /** Coroinha de abóbora de quem lidera a caça. */
+  setCrown(on: boolean) {
+    if (on === !!this.crownObj) return;
+    if (on) {
+      this.crownObj = crown();
+      // flutua acima do nome, para aparecer mesmo com chapéu ou cabeça de abóbora
+      this.crownObj.position.set(0, 0.8 * CHAR_SCALE + 0.62, 0);
+      this.root.add(this.crownObj);
+    } else { this.crownObj!.removeFromParent(); this.crownObj = null; }
+  }
+
   private mount() {
     const { model, animations } = characterModel(this.person);
     const playing = this.current ? [...this.actions].find(([, a]) => a === this.current)?.[0] : undefined;
