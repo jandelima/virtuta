@@ -18,16 +18,19 @@ export interface Hunt { pumpkin: Pumpkin | null; scores: Record<string, number> 
 
 /** Esconderijos no chão livre da sala da equipe e do hub (a reunião fica de fora, para não atrapalhar chamadas). */
 export const HUNT_SPOTS: { space: 'sala' | 'hub'; x: number; z: number }[] = [
-  { space: 'sala', x: 2.0, z: 5.8 },
-  { space: 'sala', x: 6.6, z: 10.2 },
-  { space: 'sala', x: 0.45, z: 14.9 },
-  { space: 'sala', x: 7.7, z: 14.7 },
-  { space: 'sala', x: 0.45, z: 7.0 },
-  { space: 'sala', x: 4.3, z: 11.1 },
-  { space: 'sala', x: 7.5, z: 7.4 },
-  { space: 'hub', x: 20.55, z: 2.4 },
-  { space: 'hub', x: 29.4, z: 2.3 },
-  { space: 'hub', x: 24.6, z: 6.4 },
-  { space: 'hub', x: 28.9, z: 6.45 },
-  { space: 'hub', x: 22.85, z: 5.3 },
+  // conferidos no mapa de caminhos: chão livre, com meio metro de folga em volta
+  { space: 'sala', x: 2.0, z: 5.5 },
+  { space: 'sala', x: 5.0, z: 5.5 },
+  { space: 'sala', x: 3.0, z: 10.0 },
+  { space: 'sala', x: 6.75, z: 3.5 },
+  { space: 'sala', x: 7.0, z: 12.25 },
+  { space: 'sala', x: 2.5, z: 14.5 },
+  { space: 'sala', x: 4.75, z: 14.5 },
+  { space: 'sala', x: 1.75, z: 1.25 },
+  { space: 'hub', x: 21.5, z: 2.0 },
+  { space: 'hub', x: 22.25, z: 5.0 },
+  { space: 'hub', x: 26.0, z: 3.25 },
+  { space: 'hub', x: 28.75, z: 1.5 },
+  { space: 'hub', x: 29.0, z: 4.5 },
+  { space: 'hub', x: 27.5, z: 2.0 },
 ];

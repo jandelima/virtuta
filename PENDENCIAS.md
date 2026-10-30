@@ -154,3 +154,12 @@ Pedidos do Jan. Cada item só sai da lista quando estiver feito e conferido na t
 - [x] **Interface**: logo e ícone da aba de abóbora, faixa "Feliz Halloween" que se pode fechar, cores de sempre.
 - [x] **Caça às abóboras em corrida**: de tempos em tempos aparece uma abóbora (com facho de luz) na sala ou no hub; quem clicar primeiro leva o ponto. Placar num cavalete no hub e no painel; coroinha de abóbora sobre quem lidera. Quem está em reunião não é avisado.
 - [x] **Reações** 🎃 👻 🦇 🕷️ durante o tema. **Sem som.**
+
+# Rodada 11 — 30/10: Halloween com mais capricho
+
+- [x] **Morcegos refeitos**: modelo bem-feito; pousam de cabeça para baixo nos cantos, esperam, voam para outro canto, cada um com a sua trajetória.
+- [x] **Aranhas refeitas** e **muito mais teias**, bem desenhadas.
+- [x] **Sem abóboras de decoração** (só a da caça, que passa a fazer sentido), redesenhada.
+- [x] **Lápides sutis** no gramado.
+- [x] **Todo o resto com mais capricho**: fantasmas, caldeirão, velas, placar, coroinha.
+- [x] **De quebra:** os lugares onde a abóbora da caça aparece foram conferidos no mapa de caminhos (alguns caíam em cima de mesas e cadeiras).
